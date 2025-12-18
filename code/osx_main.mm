@@ -1,20 +1,26 @@
 #include <AppKit/AppKit.h>
 #include <Foundation/Foundation.h>
-#include <cstdio>
+#include <cstdint>
 #include <stdio.h>
 
-static float GlobalRenderWidth = 1024;
-static float GlobalRenderHeight = 768;
+#define internal static
+#define local_persist static
+#define global_variable static
 
-static bool Running = true;
+global_variable float GlobalRenderWidth = 1024;
+global_variable float GlobalRenderHeight = 768;
+global_variable bool Running = true;
+global_variable uint8_t *buffer;
 
 @interface GoliathMainWindowDelegate : NSObject <NSWindowDelegate>
 @end
 
 @implementation GoliathMainWindowDelegate
+
 - (void)windowWillClose:(id)sender {
   Running = false;
 }
+
 @end
 
 int main(int argc, const char *argv[]) {
@@ -36,13 +42,39 @@ int main(int argc, const char *argv[]) {
                     defer:NO];
 
   [window setBackgroundColor:NSColor.redColor];
-  [window setTitle:@"Goliath Engine"];
+  [window setTitle:@"Goliath Game Engine"];
   [window makeKeyAndOrderFront:nil];
   [window setDelegate:mainWindowDelegate];
+  window.contentView.wantsLayer = YES;
+
+  int bitmapWidth = window.contentView.bounds.size.width;
+  int bitmapHeight = window.contentView.bounds.size.height;
+  int bytesPerPixel = 4;
+  int pitch = bitmapWidth * bytesPerPixel;
+  buffer = (uint8_t *)malloc(pitch * bitmapHeight);
 
   while (Running) {
-    NSEvent *Event;
 
+    @autoreleasepool {
+      NSBitmapImageRep *rep = [[[NSBitmapImageRep alloc]
+          initWithBitmapDataPlanes:&buffer
+                        pixelsWide:bitmapWidth
+                        pixelsHigh:bitmapHeight
+                     bitsPerSample:8
+                   samplesPerPixel:4
+                          hasAlpha:YES
+                          isPlanar:NO
+                    colorSpaceName:NSDeviceRGBColorSpace
+                       bytesPerRow:pitch
+                      bitsPerPixel:bytesPerPixel * 8] autorelease];
+
+      NSSize imageSize = NSMakeSize(bitmapWidth, bitmapHeight);
+      NSImage *image = [[[NSImage alloc] initWithSize:imageSize] autorelease];
+      [image addRepresentation:rep];
+      window.contentView.layer.contents = image;
+    }
+
+    NSEvent *Event;
     do {
       Event = [NSApp nextEventMatchingMask:NSEventMaskAny
                                  untilDate:nil
