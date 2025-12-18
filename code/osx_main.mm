@@ -1,6 +1,4 @@
 #include <AppKit/AppKit.h>
-#include <Foundation/Foundation.h>
-#include <cstdint>
 #include <stdio.h>
 
 #define internal static
@@ -31,7 +29,7 @@ global_variable int offsetX = 0;
 
 void macOSRefreshBuffer(NSWindow *window) {
   if (buffer) {
-    free(buffer);
+    free(buffer)
   }
   bitmapWidth = window.contentView.bounds.size.width;
   bitmapHeight = window.contentView.bounds.size.height;
@@ -46,27 +44,25 @@ void renderWeirdGradient() {
 
   for (int y = 0; y < height; ++y) {
 
-    // this is really not a pixel, more like a byte in a pixel
-    uint8 *pixel = (uint8 *)row;
+    uint8 *byteInPixel = (uint8 *)row;
 
     for (int x = 0; x < width; ++x) {
-      // Red
-      *pixel = 0;
-      ++pixel;
+      // red
+      *byteInPixel = 0;
+      ++byteInPixel;
 
-      // Green
-      *pixel = (uint8)y;
-      ++pixel;
+      // green
+      *byteInPixel = (uint8)y;
+      ++byteInPixel;
 
-      // Blue
-      *pixel = (uint8)x + (uint8)offsetX;
-      ++pixel;
+      // blue
+      *byteInPixel = (uint8)x + (uint8)offsetX;
+      ++byteInPixel;
 
-      // Alpha
-      *pixel = 255;
-      ++pixel;
+      // alpha
+      *byteInPixel = 255;
+      ++byteInPixel;
     }
-
     row += pitch;
   }
 }
@@ -84,7 +80,6 @@ void macOSRedrawBuffer(NSWindow *window) {
                   colorSpaceName:NSDeviceRGBColorSpace
                      bytesPerRow:pitch
                     bitsPerPixel:bytesPerPixel * 8] autorelease];
-
     NSSize imageSize = NSMakeSize(bitmapWidth, bitmapHeight);
     NSImage *image = [[[NSImage alloc] initWithSize:imageSize] autorelease];
     [image addRepresentation:rep];
