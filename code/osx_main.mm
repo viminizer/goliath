@@ -7,10 +7,90 @@
 #define local_persist static
 #define global_variable static
 
+typedef int8_t int8;
+typedef int16_t int16;
+typedef int32_t int32;
+typedef int64_t int64;
+
+typedef uint8_t uint8;
+typedef uint16_t uint16;
+typedef uint32_t uint32;
+typedef uint64_t uint64;
+
 global_variable float GlobalRenderWidth = 1024;
 global_variable float GlobalRenderHeight = 768;
+
 global_variable bool Running = true;
-global_variable uint8_t *buffer;
+global_variable uint8 *buffer;
+global_variable int bitmapWidth;
+global_variable int bitmapHeight;
+global_variable int bytesPerPixel = 4;
+global_variable int pitch;
+
+global_variable int offsetX = 0;
+
+void macOSRefreshBuffer(NSWindow *window) {
+  if (buffer) {
+    free(buffer);
+  }
+  bitmapWidth = window.contentView.bounds.size.width;
+  bitmapHeight = window.contentView.bounds.size.height;
+  pitch = bitmapWidth * bytesPerPixel;
+  buffer = (uint8 *)malloc(pitch * bitmapHeight);
+}
+
+void renderWeirdGradient() {
+  int width = bitmapWidth;
+  int height = bitmapHeight;
+  uint8 *row = (uint8 *)buffer;
+
+  for (int y = 0; y < height; ++y) {
+
+    // this is really not a pixel, more like a byte in a pixel
+    uint8 *pixel = (uint8 *)row;
+
+    for (int x = 0; x < width; ++x) {
+      // Red
+      *pixel = 0;
+      ++pixel;
+
+      // Green
+      *pixel = (uint8)y;
+      ++pixel;
+
+      // Blue
+      *pixel = (uint8)x + (uint8)offsetX;
+      ++pixel;
+
+      // Alpha
+      *pixel = 255;
+      ++pixel;
+    }
+
+    row += pitch;
+  }
+}
+
+void macOSRedrawBuffer(NSWindow *window) {
+  @autoreleasepool {
+    NSBitmapImageRep *rep = [[[NSBitmapImageRep alloc]
+        initWithBitmapDataPlanes:&buffer
+                      pixelsWide:bitmapWidth
+                      pixelsHigh:bitmapHeight
+                   bitsPerSample:8
+                 samplesPerPixel:4
+                        hasAlpha:YES
+                        isPlanar:NO
+                  colorSpaceName:NSDeviceRGBColorSpace
+                     bytesPerRow:pitch
+                    bitsPerPixel:bytesPerPixel * 8] autorelease];
+
+    NSSize imageSize = NSMakeSize(bitmapWidth, bitmapHeight);
+    NSImage *image = [[[NSImage alloc] initWithSize:imageSize] autorelease];
+    [image addRepresentation:rep];
+    window.contentView.layer.contents = image;
+  }
+}
 
 @interface GoliathMainWindowDelegate : NSObject <NSWindowDelegate>
 @end
@@ -19,6 +99,13 @@ global_variable uint8_t *buffer;
 
 - (void)windowWillClose:(id)sender {
   Running = false;
+}
+
+- (void)windowDidResize:(NSNotification *)notification {
+  NSWindow *window = (NSWindow *)notification.object;
+  macOSRefreshBuffer(window);
+  renderWeirdGradient();
+  macOSRedrawBuffer(window);
 }
 
 @end
@@ -47,34 +134,14 @@ int main(int argc, const char *argv[]) {
   [window setDelegate:mainWindowDelegate];
   window.contentView.wantsLayer = YES;
 
-  int bitmapWidth = window.contentView.bounds.size.width;
-  int bitmapHeight = window.contentView.bounds.size.height;
-  int bytesPerPixel = 4;
-  int pitch = bitmapWidth * bytesPerPixel;
-  buffer = (uint8_t *)malloc(pitch * bitmapHeight);
+  macOSRefreshBuffer(window);
 
   while (Running) {
-
-    @autoreleasepool {
-      NSBitmapImageRep *rep = [[[NSBitmapImageRep alloc]
-          initWithBitmapDataPlanes:&buffer
-                        pixelsWide:bitmapWidth
-                        pixelsHigh:bitmapHeight
-                     bitsPerSample:8
-                   samplesPerPixel:4
-                          hasAlpha:YES
-                          isPlanar:NO
-                    colorSpaceName:NSDeviceRGBColorSpace
-                       bytesPerRow:pitch
-                      bitsPerPixel:bytesPerPixel * 8] autorelease];
-
-      NSSize imageSize = NSMakeSize(bitmapWidth, bitmapHeight);
-      NSImage *image = [[[NSImage alloc] initWithSize:imageSize] autorelease];
-      [image addRepresentation:rep];
-      window.contentView.layer.contents = image;
-    }
-
+    renderWeirdGradient();
+    macOSRedrawBuffer(window);
+    offsetX++;
     NSEvent *Event;
+
     do {
       Event = [NSApp nextEventMatchingMask:NSEventMaskAny
                                  untilDate:nil
