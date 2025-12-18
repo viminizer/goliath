@@ -1,46 +1,43 @@
-#include <AppKit/AppKit.h>
-#include <stdio.h>
-
-#define internal static
-#define local_persist static
-#define global_variable static
-
-typedef int8_t int8;
-typedef int16_t int16;
-typedef int32_t int32;
-typedef int64_t int64;
-
-typedef uint8_t uint8;
-typedef uint16_t uint16;
-typedef uint32_t uint32;
-typedef uint64_t uint64;
+#include "goliath_types.h"
+#include <cstdlib>
 
 global_variable float GlobalRenderWidth = 1024;
 global_variable float GlobalRenderHeight = 768;
 
 global_variable bool Running = true;
-global_variable uint8 *buffer;
-global_variable int bitmapWidth;
-global_variable int bitmapHeight;
-global_variable int bytesPerPixel = 4;
-global_variable int pitch;
+
+typedef struct macos_offscreen_buffer {
+  uint8 *memory;
+  int bitmapWidth;
+  int bitmapHeight;
+  int bytesPerPixel = 4;
+  int pitch;
+} OffscreenBuffer;
+
+OffscreenBuffer bufferStruct;
+OffscreenBuffer *buffer = &bufferStruct;
+
+struct macos_window_dimension {
+  int width;
+  int height;
+};
 
 global_variable int offsetX = 0;
 
-void macOSRefreshBuffer(NSWindow *window) {
-  if (buffer) {
-    free(buffer);
+void macOSRefreshBuffer(NSWindow *window, OffscreenBuffer *buffer) {
+  if (buffer->memory) {
+    free(buffer->memory);
   }
-  bitmapWidth = window.contentView.bounds.size.width;
-  bitmapHeight = window.contentView.bounds.size.height;
-  pitch = bitmapWidth * bytesPerPixel;
-  buffer = (uint8 *)malloc(pitch * bitmapHeight);
+  buffer->bitmapWidth = window.contentView.bounds.size.width;
+  buffer->bitmapHeight = window.contentView.bounds.size.height;
+  buffer->pitch = buffer->bitmapWidth * buffer->bytesPerPixel;
+  buffer->memory = (uint8 *)malloc(buffer->pitch * buffer->bitmapHeight);
 }
 
-void renderWeirdGradient() {
-  int width = bitmapWidth;
-  int height = bitmapHeight;
-  uint8 *row = (uint8 *)buffer;
+void renderWeirdGradient(OffscreenBuffer *buffer) {
+  int width = buffer->bitmapWidth;
+  int height = buffer->bitmapHeight;
+  uint8 *row = (uint8 *)buffer->memory;
 
   for (int y = 0; y < height; ++y) {
 
@@ -63,24 +60,24 @@ void renderWeirdGradient() {
       *byteInPixel = 255;
       ++byteInPixel;
     }
-    row += pitch;
+    row += buffer->pitch;
   }
 }
 
-void macOSRedrawBuffer(NSWindow *window) {
+void macOSRedrawBuffer(NSWindow *window, OffscreenBuffer *buffer) {
   @autoreleasepool {
     NSBitmapImageRep *rep = [[[NSBitmapImageRep alloc]
-        initWithBitmapDataPlanes:&buffer
-                      pixelsWide:bitmapWidth
-                      pixelsHigh:bitmapHeight
+        initWithBitmapDataPlanes:&buffer->memory
+                      pixelsWide:buffer->bitmapWidth
+                      pixelsHigh:buffer->bitmapHeight
                    bitsPerSample:8
                  samplesPerPixel:4
                         hasAlpha:YES
                         isPlanar:NO
                   colorSpaceName:NSDeviceRGBColorSpace
-                     bytesPerRow:pitch
-                    bitsPerPixel:bytesPerPixel * 8] autorelease];
-    NSSize imageSize = NSMakeSize(bitmapWidth, bitmapHeight);
+                     bytesPerRow:buffer->pitch
+                    bitsPerPixel:buffer->bytesPerPixel * 8] autorelease];
+    NSSize imageSize = NSMakeSize(buffer->bitmapWidth, buffer->bitmapHeight);
     NSImage *image = [[[NSImage alloc] initWithSize:imageSize] autorelease];
     [image addRepresentation:rep];
     window.contentView.layer.contents = image;
@@ -98,9 +95,9 @@ void macOSRedrawBuffer(NSWindow *window) {
 
 - (void)windowDidResize:(NSNotification *)notification {
   NSWindow *window = (NSWindow *)notification.object;
-  macOSRefreshBuffer(window);
-  renderWeirdGradient();
-  macOSRedrawBuffer(window);
+  macOSRefreshBuffer(window, buffer);
+  renderWeirdGradient(buffer);
+  macOSRedrawBuffer(window, buffer);
 }
 
 @end
@@ -129,11 +126,11 @@ int main(int argc, const char *argv[]) {
   [window setDelegate:mainWindowDelegate];
   window.contentView.wantsLayer = YES;
 
-  macOSRefreshBuffer(window);
+  macOSRefreshBuffer(window, buffer);
 
   while (Running) {
-    renderWeirdGradient();
-    macOSRedrawBuffer(window);
+    renderWeirdGradient(buffer);
+    macOSRedrawBuffer(window, buffer);
     offsetX++;
     NSEvent *Event;
 
