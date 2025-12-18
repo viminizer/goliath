@@ -29,7 +29,7 @@ global_variable int offsetX = 0;
 
 void macOSRefreshBuffer(NSWindow *window) {
   if (buffer) {
-    free(buffer)
+    free(buffer);
   }
   bitmapWidth = window.contentView.bounds.size.width;
   bitmapHeight = window.contentView.bounds.size.height;
