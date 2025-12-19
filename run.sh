@@ -1,1 +1,1 @@
-../build/goliath
+./build/goliath
