@@ -1,7 +1,6 @@
 #include "goliath_types.h"
-#include <Foundation/Foundation.h>
+#include <AudioToolbox/AudioToolbox.h>
 #include <IOKit/hid/IOHIDLib.h>
-#include <IOKit/hid/IOHIDUsageTables.h>
 
 global_variable float GlobalRenderWidth = 1024;
 global_variable float GlobalRenderHeight = 768;
@@ -416,6 +415,80 @@ static void controllerInput(void *context, IOReturn result, void *sender,
 
 @end
 
+const int samplesPerSecond = 48000;
+
+OSStatus squareWaveRenderCallback(void *inRefCon,
+                                  AudioUnitRenderActionFlags *ioActionFlags,
+                                  const AudioTimeStamp *inTimeStamp,
+                                  uint32 inBusNumber, uint32 inNumberFrames,
+                                  AudioBufferList *ioData) {
+#pragma unused(ioActionFlags)
+#pragma unused(inTimeStamp)
+#pragma unused(inBusNumber)
+#pragma unused(inRefCon)
+
+  int16 *channel = (int16 *)ioData->mBuffers[0].mData;
+
+  uint32 frequency = 256;
+  uint32 period = samplesPerSecond / frequency;
+  uint32 halfPeriod = period / 2;
+  local_persist uint32 runningSampleIndex = 0;
+  for (uint32 i = 0; i < inNumberFrames; i++) {
+    if ((runningSampleIndex % period) > halfPeriod) {
+      *channel++ = 5000;
+      *channel++ = 5000;
+    } else {
+      *channel++ = -5000;
+      *channel++ = -5000;
+    }
+    runningSampleIndex++;
+  }
+  return noErr;
+}
+
+global_variable AudioComponentInstance audioUnit;
+internal void macOSInitSound() {
+  AudioComponentDescription acd;
+  acd.componentType = kAudioUnitType_Output;
+  acd.componentSubType = kAudioUnitSubType_DefaultOutput;
+  acd.componentManufacturer = kAudioUnitManufacturer_Apple;
+  acd.componentFlags = 0;
+  acd.componentFlagsMask = 0;
+
+  AudioComponent outputComponent = AudioComponentFindNext(NULL, &acd);
+  OSStatus status = AudioComponentInstanceNew(outputComponent, &audioUnit);
+
+  if (status != noErr) {
+    NSLog(@"There was an error setting up sound");
+    return;
+  }
+
+  AudioStreamBasicDescription audioDescriptor;
+  audioDescriptor.mSampleRate = samplesPerSecond;
+  audioDescriptor.mFormatID = kAudioFormatLinearPCM;
+  audioDescriptor.mFormatFlags =
+      kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
+
+  int framesPerPacket = 1;
+  int bytesPerFrame = sizeof(int16) * 2;
+  audioDescriptor.mFramesPerPacket = framesPerPacket;
+  audioDescriptor.mChannelsPerFrame = 2;
+  audioDescriptor.mBitsPerChannel = sizeof(int16) * 8;
+  audioDescriptor.mBytesPerFrame = bytesPerFrame;
+  audioDescriptor.mBytesPerPacket = framesPerPacket * bytesPerFrame;
+
+  status = AudioUnitSetProperty(audioUnit, kAudioUnitProperty_StreamFormat,
+                                kAudioUnitScope_Input, 0, &audioDescriptor,
+                                sizeof(audioDescriptor));
+  if (status != noErr) {
+    NSLog(@"There was an error setting up the audio unit");
+    return;
+  }
+
+  AudioUnitInitialize(audioUnit);
+  AudioOutputUnitStart(audioUnit);
+}
+
 int main(int argc, const char *argv[]) {
 
   GoliathMainWindowDelegate *mainWindowDelegate =
@@ -441,6 +514,8 @@ int main(int argc, const char *argv[]) {
   window.contentView.wantsLayer = YES;
 
   macOSRefreshBuffer(window, buffer);
+  macOSInitGameControllers();
+  macOSInitSound();
 
   while (Running) {
     renderWeirdGradient(buffer);
