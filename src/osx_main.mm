@@ -1,7 +1,10 @@
 #include "osx_main.h"
 #include "goliath_types.h"
 #include <AudioToolbox/AudioToolbox.h>
+#include <CoreFoundation/CFBase.h>
 #include <IOKit/hid/IOHIDLib.h>
+#include <IOKit/hid/IOHIDUsageTables.h>
+#include <cmath>
 
 global_variable float GlobalRenderWidth = 1024;
 global_variable float GlobalRenderHeight = 768;
@@ -106,6 +109,9 @@ void macOSRedrawBuffer(NSWindow *window, OffscreenBuffer *buffer) {
 @end
 
 @interface OSXGoliathController : NSObject
+// LeftThumbstick
+@property float leftThumbstickX;
+@property float leftThumbstickY;
 
 // DPAD
 @property NSInteger dpadX;
@@ -137,6 +143,11 @@ global_variable OSXGoliathController *keyboardController = nil;
 @end
 
 @implementation OSXGoliathController {
+  bool _usesHatSwitch;
+
+  // LeftThumbstick
+  CFIndex _lThumbXUsageID;
+  CFIndex _lThumbYUsageID;
   // DPAD
   CFIndex _dpadLUsageID;
   CFIndex _dpadRUsageID;
@@ -316,6 +327,9 @@ static void controllerConnected(void *context, IOReturn result, void *sender,
 
   if (vendorID == 0x054C && productID == 0x5C4) {
     NSLog(@"Sony Dualshock 4 detected.");
+    controller->_lThumbXUsageID = kHIDUsage_GD_X;
+    controller->_lThumbXUsageID = kHIDUsage_GD_Y;
+    controller->_usesHatSwitch = true;
     controller->_buttonAUsageID = 0x02;
     controller->_buttonBUsageID = 0x03;
     controller->_buttonXUsageID = 0x01;
@@ -425,64 +439,32 @@ OSStatus circularBufferRenderCallback(void *inRefCon,
                                       const AudioTimeStamp *inTimeStamp,
                                       uint32 inBusNumber, uint32 inNumberFrames,
                                       AudioBufferList *ioData) {
-
   int length = inNumberFrames * soundOutput.bytesPerSample;
   uint32 region1Size = length;
   uint32 region2Size = 0;
-
   if (soundOutput.playCursor + length > soundOutput.bufferSize) {
     region1Size = soundOutput.bufferSize - soundOutput.playCursor;
     region2Size = length - region1Size;
   }
   uint8 *channel = (uint8 *)ioData->mBuffers[0].mData;
-
   memcpy(channel, (uint8 *)soundOutput.data + soundOutput.playCursor,
          region1Size);
   memcpy(&channel[region1Size], soundOutput.data, region2Size);
-
   soundOutput.playCursor =
       (soundOutput.playCursor + length) % soundOutput.bufferSize;
-  /* soundOutput.writeCursor = (soundOutput.playCursor +
-   * 2048)%soundOutput.bufferSize; */
+  soundOutput.writeCursor =
+      (soundOutput.playCursor + 2048) % soundOutput.bufferSize;
   return noErr;
 }
 
-/* OSStatus squareWaveRenderCallback(void *inRefCon, */
-/*                                   AudioUnitRenderActionFlags *ioActionFlags,
- */
-/*                                   const AudioTimeStamp *inTimeStamp, */
-/*                                   uint32 inBusNumber, uint32 inNumberFrames,
- */
-/*                                   AudioBufferList *ioData) { */
-/* #pragma unused(ioActionFlags) */
-/* #pragma unused(inTimeStamp) */
-/* #pragma unused(inBusNumber) */
-/* #pragma unused(inRefCon) */
-/**/
-/*   int16 *channel = (int16 *)ioData->mBuffers[0].mData; */
-/**/
-/*   uint32 frequency = 256; */
-/*   uint32 period = samplesPerSecond / frequency; */
-/*   uint32 halfPeriod = period / 2; */
-/*   local_persist uint32 runningSampleIndex = 0; */
-/*   for (uint32 i = 0; i < inNumberFrames; i++) { */
-/*     if ((runningSampleIndex % period) > halfPeriod) { */
-/*       *channel++ = 5000; */
-/*       *channel++ = 5000; */
-/*     } else { */
-/*       *channel++ = -5000; */
-/*       *channel++ = -5000; */
-/*     } */
-/*     runningSampleIndex++; */
-/*   } */
-/*   return noErr; */
-/* } */
-/**/
-
 global_variable AudioComponentInstance audioUnit;
-internal void macOSInitSound() {
 
+internal void macOSInitSound() {
+  // create a two second circular buffer
   soundOutput.samplesPerSecond = 48000;
+  soundOutput.toneHz = 256;
+  soundOutput.tSine = 0.0f;
+  soundOutput.wavePeriod = soundOutput.samplesPerSecond / soundOutput.toneHz;
   int audioFrameSize = sizeof(int16) * 2;
   int numberOfSeconds = 2;
   soundOutput.bytesPerSample = audioFrameSize;
@@ -490,28 +472,23 @@ internal void macOSInitSound() {
       soundOutput.samplesPerSecond * audioFrameSize * numberOfSeconds;
   soundOutput.data = malloc(soundOutput.bufferSize);
   soundOutput.playCursor = soundOutput.writeCursor = 0;
-
   AudioComponentDescription acd;
   acd.componentType = kAudioUnitType_Output;
   acd.componentSubType = kAudioUnitSubType_DefaultOutput;
   acd.componentManufacturer = kAudioUnitManufacturer_Apple;
   acd.componentFlags = 0;
   acd.componentFlagsMask = 0;
-
   AudioComponent outputComponent = AudioComponentFindNext(NULL, &acd);
   OSStatus status = AudioComponentInstanceNew(outputComponent, &audioUnit);
-
   if (status != noErr) {
     NSLog(@"There was an error setting up sound");
     return;
   }
-
   AudioStreamBasicDescription audioDescriptor;
   audioDescriptor.mSampleRate = soundOutput.samplesPerSecond;
   audioDescriptor.mFormatID = kAudioFormatLinearPCM;
   audioDescriptor.mFormatFlags =
       kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
-
   int framesPerPacket = 1;
   int bytesPerFrame = sizeof(int16) * 2;
   audioDescriptor.mFramesPerPacket = framesPerPacket;
@@ -519,7 +496,6 @@ internal void macOSInitSound() {
   audioDescriptor.mBitsPerChannel = sizeof(int16) * 8;
   audioDescriptor.mBytesPerFrame = bytesPerFrame;
   audioDescriptor.mBytesPerPacket = framesPerPacket * bytesPerFrame;
-
   status = AudioUnitSetProperty(audioUnit, kAudioUnitProperty_StreamFormat,
                                 kAudioUnitScope_Input, 0, &audioDescriptor,
                                 sizeof(audioDescriptor));
@@ -527,76 +503,67 @@ internal void macOSInitSound() {
     NSLog(@"There was an error setting up the audio unit");
     return;
   }
-
   AURenderCallbackStruct renderCallback;
   renderCallback.inputProc = circularBufferRenderCallback;
-
   status = AudioUnitSetProperty(audioUnit, kAudioUnitProperty_SetRenderCallback,
                                 kAudioUnitScope_Global, 0, &renderCallback,
                                 sizeof(renderCallback));
-
   if (status != noErr) {
     NSLog(@"There was an error setting up the audio unit");
     return;
   }
-
   AudioUnitInitialize(audioUnit);
   AudioOutputUnitStart(audioUnit);
 }
 
 internal void updateSoundBuffer() {
-  int sampleCount = 1600;
-
-  uint32 frequency = 256;
-  uint32 period = soundOutput.samplesPerSecond / frequency;
-  uint32 halfPeriod = period / 2;
   local_persist uint32 runningSampleIndex = 0;
-
+  int latencySampleCount = soundOutput.samplesPerSecond / 15;
+  int targetQueueBytes = latencySampleCount * soundOutput.bytesPerSample;
+  int targetCursor = ((soundOutput.playCursor +
+                       (latencySampleCount * soundOutput.bytesPerSample)) %
+                      soundOutput.bufferSize);
   int byteToLock = (runningSampleIndex * soundOutput.bytesPerSample) %
                    soundOutput.bufferSize;
   int bytesToWrite;
-
-  if (byteToLock == soundOutput.playCursor) {
+  if (byteToLock == targetCursor) {
     bytesToWrite = soundOutput.bufferSize;
-  } else if (byteToLock > soundOutput.playCursor) {
+  } else if (byteToLock > targetCursor) {
     bytesToWrite = (soundOutput.bufferSize - byteToLock);
-    bytesToWrite += soundOutput.playCursor;
+    bytesToWrite += targetCursor;
   } else {
-    bytesToWrite = soundOutput.playCursor - byteToLock;
+    bytesToWrite = targetCursor - byteToLock;
   }
-
   void *region1 = (uint8 *)soundOutput.data + byteToLock;
   int region1Size = bytesToWrite;
-
   if (region1Size + byteToLock > soundOutput.bufferSize) {
     region1Size = soundOutput.bufferSize - byteToLock;
   }
-
   void *region2 = soundOutput.data;
   int region2Size = bytesToWrite - region1Size;
-
   int region1SampleCount = region1Size / soundOutput.bytesPerSample;
   int16 *sampleOut = (int16 *)region1;
-
   for (int sampleIndex = 0; sampleIndex < region1SampleCount; ++sampleIndex) {
-    int16 sampleValue =
-        ((runningSampleIndex++ / halfPeriod) % 2) ? 5000 : -5000;
+    real32 sineValue = sinf(soundOutput.tSine);
+    int16 sampleValue = (int16)(sineValue * 5000);
     *sampleOut++ = sampleValue;
     *sampleOut++ = sampleValue;
+    soundOutput.tSine += 2.0f * M_PI * 1.0f / (real32)soundOutput.wavePeriod;
+    runningSampleIndex++;
   }
-
   int region2SampleCount = region2Size / soundOutput.bytesPerSample;
   sampleOut = (int16 *)region2;
   for (int sampleIndex = 0; sampleIndex < region2SampleCount; ++sampleIndex) {
-    int16 sampleValue =
-        ((runningSampleIndex++ / halfPeriod) % 2) ? 5000 : -5000;
+    real32 sineValue = sinf(soundOutput.tSine);
+    int16 sampleValue = (int16)(sineValue * 5000);
     *sampleOut++ = sampleValue;
     *sampleOut++ = sampleValue;
+    soundOutput.tSine += 2.0f * M_PI * 1.0f / (real32)soundOutput.wavePeriod;
+    runningSampleIndex++;
   }
 }
 
 int main(int argc, const char *argv[]) {
-
   GoliathMainWindowDelegate *mainWindowDelegate =
       [[GoliathMainWindowDelegate alloc] init];
   NSRect screenRect = [[NSScreen mainScreen] frame];
@@ -604,7 +571,6 @@ int main(int argc, const char *argv[]) {
       NSMakeRect((screenRect.size.width - GlobalRenderWidth) * 0.5,
                  (screenRect.size.height - GlobalRenderHeight) * 0.5,
                  GlobalRenderWidth, GlobalRenderHeight);
-
   NSWindow *window = [[NSWindow alloc]
       initWithContentRect:initialFrame
                 styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
@@ -626,6 +592,7 @@ int main(int argc, const char *argv[]) {
   while (Running) {
     renderWeirdGradient(buffer);
     macOSRedrawBuffer(window, buffer);
+    updateSoundBuffer();
 
     OSXGoliathController *controller = keyboardController;
 
@@ -658,6 +625,10 @@ int main(int argc, const char *argv[]) {
       if (controller.dpadY == -1) {
         offsetY--;
       }
+
+      soundOutput.toneHz = 512 + (int)(controller.leftThumbstickY * 10.0f);
+      soundOutput.wavePeriod =
+          soundOutput.samplesPerSecond / soundOutput.toneHz;
     }
     NSEvent *event;
 
