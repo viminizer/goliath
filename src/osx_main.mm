@@ -1,10 +1,11 @@
 #include "osx_main.h"
 #include "goliath_types.h"
 #include <AudioToolbox/AudioToolbox.h>
-#include <CoreFoundation/CFBase.h>
 #include <IOKit/hid/IOHIDLib.h>
-#include <IOKit/hid/IOHIDUsageTables.h>
-#include <cmath>
+#include <Security/cssmconfig.h>
+#include <mach/mach_init.h>
+#include <mach/mach_time.h>
+#include <os/clock.h>
 
 global_variable float GlobalRenderWidth = 1024;
 global_variable float GlobalRenderHeight = 768;
@@ -589,6 +590,10 @@ int main(int argc, const char *argv[]) {
   macOSInitGameControllers();
   macOSInitSound();
 
+  uint64 currentTime = mach_absolute_time();
+  uint64 lastCounter = currentTime;
+  real32 frameTime = 0.0f;
+
   while (Running) {
     renderWeirdGradient(buffer);
     macOSRedrawBuffer(window, buffer);
@@ -648,6 +653,22 @@ int main(int argc, const char *argv[]) {
         [NSApp sendEvent:event];
       }
     } while (event != nil);
+
+    uint64 endCounter = mach_absolute_time();
+    mach_timebase_info_data_t tb;
+    uint64 elapsed = endCounter - lastCounter;
+
+    if (tb.denom == 0) {
+      mach_timebase_info(&tb);
+    }
+    uint64 nanoseconds = elapsed * tb.numer / tb.denom;
+    real32 mesuredSecondsPerFrame = (real32)nanoseconds * 1.0E-9;
+    real32 measuredFramesPerSecond = 1 / mesuredSecondsPerFrame;
+
+    frameTime += mesuredSecondsPerFrame;
+    lastCounter = endCounter;
+
+    NSLog(@"Frames per second %f", measuredFramesPerSecond);
   }
 
   printf("Goliath finished running");
