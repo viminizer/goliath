@@ -1,3 +1,4 @@
+#include "osx_main.h"
 #include "goliath_types.h"
 #include <AudioToolbox/AudioToolbox.h>
 #include <IOKit/hid/IOHIDLib.h>
@@ -417,37 +418,79 @@ static void controllerInput(void *context, IOReturn result, void *sender,
 
 const int samplesPerSecond = 48000;
 
-OSStatus squareWaveRenderCallback(void *inRefCon,
-                                  AudioUnitRenderActionFlags *ioActionFlags,
-                                  const AudioTimeStamp *inTimeStamp,
-                                  uint32 inBusNumber, uint32 inNumberFrames,
-                                  AudioBufferList *ioData) {
-#pragma unused(ioActionFlags)
-#pragma unused(inTimeStamp)
-#pragma unused(inBusNumber)
-#pragma unused(inRefCon)
+global_variable MacOSSoundOutput soundOutput = {};
 
-  int16 *channel = (int16 *)ioData->mBuffers[0].mData;
+OSStatus circularBufferRenderCallback(void *inRefCon,
+                                      AudioUnitRenderActionFlags *ioActionFlags,
+                                      const AudioTimeStamp *inTimeStamp,
+                                      uint32 inBusNumber, uint32 inNumberFrames,
+                                      AudioBufferList *ioData) {
 
-  uint32 frequency = 256;
-  uint32 period = samplesPerSecond / frequency;
-  uint32 halfPeriod = period / 2;
-  local_persist uint32 runningSampleIndex = 0;
-  for (uint32 i = 0; i < inNumberFrames; i++) {
-    if ((runningSampleIndex % period) > halfPeriod) {
-      *channel++ = 5000;
-      *channel++ = 5000;
-    } else {
-      *channel++ = -5000;
-      *channel++ = -5000;
-    }
-    runningSampleIndex++;
+  int length = inNumberFrames * soundOutput.bytesPerSample;
+  uint32 region1Size = length;
+  uint32 region2Size = 0;
+
+  if (soundOutput.playCursor + length > soundOutput.bufferSize) {
+    region1Size = soundOutput.bufferSize - soundOutput.playCursor;
+    region2Size = length - region1Size;
   }
+  uint8 *channel = (uint8 *)ioData->mBuffers[0].mData;
+
+  memcpy(channel, (uint8 *)soundOutput.data + soundOutput.playCursor,
+         region1Size);
+  memcpy(&channel[region1Size], soundOutput.data, region2Size);
+
+  soundOutput.playCursor =
+      (soundOutput.playCursor + length) % soundOutput.bufferSize;
+  /* soundOutput.writeCursor = (soundOutput.playCursor +
+   * 2048)%soundOutput.bufferSize; */
   return noErr;
 }
 
+/* OSStatus squareWaveRenderCallback(void *inRefCon, */
+/*                                   AudioUnitRenderActionFlags *ioActionFlags,
+ */
+/*                                   const AudioTimeStamp *inTimeStamp, */
+/*                                   uint32 inBusNumber, uint32 inNumberFrames,
+ */
+/*                                   AudioBufferList *ioData) { */
+/* #pragma unused(ioActionFlags) */
+/* #pragma unused(inTimeStamp) */
+/* #pragma unused(inBusNumber) */
+/* #pragma unused(inRefCon) */
+/**/
+/*   int16 *channel = (int16 *)ioData->mBuffers[0].mData; */
+/**/
+/*   uint32 frequency = 256; */
+/*   uint32 period = samplesPerSecond / frequency; */
+/*   uint32 halfPeriod = period / 2; */
+/*   local_persist uint32 runningSampleIndex = 0; */
+/*   for (uint32 i = 0; i < inNumberFrames; i++) { */
+/*     if ((runningSampleIndex % period) > halfPeriod) { */
+/*       *channel++ = 5000; */
+/*       *channel++ = 5000; */
+/*     } else { */
+/*       *channel++ = -5000; */
+/*       *channel++ = -5000; */
+/*     } */
+/*     runningSampleIndex++; */
+/*   } */
+/*   return noErr; */
+/* } */
+/**/
+
 global_variable AudioComponentInstance audioUnit;
 internal void macOSInitSound() {
+
+  soundOutput.samplesPerSecond = 48000;
+  int audioFrameSize = sizeof(int16) * 2;
+  int numberOfSeconds = 2;
+  soundOutput.bytesPerSample = audioFrameSize;
+  soundOutput.bufferSize =
+      soundOutput.samplesPerSecond * audioFrameSize * numberOfSeconds;
+  soundOutput.data = malloc(soundOutput.bufferSize);
+  soundOutput.playCursor = soundOutput.writeCursor = 0;
+
   AudioComponentDescription acd;
   acd.componentType = kAudioUnitType_Output;
   acd.componentSubType = kAudioUnitSubType_DefaultOutput;
@@ -464,7 +507,7 @@ internal void macOSInitSound() {
   }
 
   AudioStreamBasicDescription audioDescriptor;
-  audioDescriptor.mSampleRate = samplesPerSecond;
+  audioDescriptor.mSampleRate = soundOutput.samplesPerSecond;
   audioDescriptor.mFormatID = kAudioFormatLinearPCM;
   audioDescriptor.mFormatFlags =
       kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
@@ -485,8 +528,71 @@ internal void macOSInitSound() {
     return;
   }
 
+  AURenderCallbackStruct renderCallback;
+  renderCallback.inputProc = circularBufferRenderCallback;
+
+  status = AudioUnitSetProperty(audioUnit, kAudioUnitProperty_SetRenderCallback,
+                                kAudioUnitScope_Global, 0, &renderCallback,
+                                sizeof(renderCallback));
+
+  if (status != noErr) {
+    NSLog(@"There was an error setting up the audio unit");
+    return;
+  }
+
   AudioUnitInitialize(audioUnit);
   AudioOutputUnitStart(audioUnit);
+}
+
+internal void updateSoundBuffer() {
+  int sampleCount = 1600;
+
+  uint32 frequency = 256;
+  uint32 period = soundOutput.samplesPerSecond / frequency;
+  uint32 halfPeriod = period / 2;
+  local_persist uint32 runningSampleIndex = 0;
+
+  int byteToLock = (runningSampleIndex * soundOutput.bytesPerSample) %
+                   soundOutput.bufferSize;
+  int bytesToWrite;
+
+  if (byteToLock == soundOutput.playCursor) {
+    bytesToWrite = soundOutput.bufferSize;
+  } else if (byteToLock > soundOutput.playCursor) {
+    bytesToWrite = (soundOutput.bufferSize - byteToLock);
+    bytesToWrite += soundOutput.playCursor;
+  } else {
+    bytesToWrite = soundOutput.playCursor - byteToLock;
+  }
+
+  void *region1 = (uint8 *)soundOutput.data + byteToLock;
+  int region1Size = bytesToWrite;
+
+  if (region1Size + byteToLock > soundOutput.bufferSize) {
+    region1Size = soundOutput.bufferSize - byteToLock;
+  }
+
+  void *region2 = soundOutput.data;
+  int region2Size = bytesToWrite - region1Size;
+
+  int region1SampleCount = region1Size / soundOutput.bytesPerSample;
+  int16 *sampleOut = (int16 *)region1;
+
+  for (int sampleIndex = 0; sampleIndex < region1SampleCount; ++sampleIndex) {
+    int16 sampleValue =
+        ((runningSampleIndex++ / halfPeriod) % 2) ? 5000 : -5000;
+    *sampleOut++ = sampleValue;
+    *sampleOut++ = sampleValue;
+  }
+
+  int region2SampleCount = region2Size / soundOutput.bytesPerSample;
+  sampleOut = (int16 *)region2;
+  for (int sampleIndex = 0; sampleIndex < region2SampleCount; ++sampleIndex) {
+    int16 sampleValue =
+        ((runningSampleIndex++ / halfPeriod) % 2) ? 5000 : -5000;
+    *sampleOut++ = sampleValue;
+    *sampleOut++ = sampleValue;
+  }
 }
 
 int main(int argc, const char *argv[]) {
