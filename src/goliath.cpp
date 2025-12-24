@@ -42,9 +42,23 @@ internal_usage void RenderWeirdGradient(game_offscreen_buffer *Buffer,
   }
 }
 
-void GameUpdateAndRender(game_offscreen_buffer *Buffer, int BlueOffset,
-                         int GreenOffset, game_sound_output_buffer *SoundBuffer,
-                         int ToneHZ) {
+void GameUpdateAndRender(game_input *Input, game_offscreen_buffer *Buffer,
+                         game_sound_output_buffer *SoundBuffer) {
+  local_persist int BlueOffset = 0;
+  local_persist int GreenOffset = 0;
+  local_persist int ToneHZ = 256;
+
+  game_controller_input *Input0 = &Input->Controllers[0];
+  if (Input0->IsAnalog) {
+    ToneHZ = 256 + (int)128.0f * (Input0->EndX);
+    BlueOffset += (int)4.0f * (Input0->EndY);
+  } else {
+  }
+
+  if (Input0->Down.EndedDown) {
+    GreenOffset += 1;
+  }
+
   GameOutputSound(SoundBuffer, ToneHZ);
   RenderWeirdGradient(Buffer, BlueOffset, GreenOffset);
 }

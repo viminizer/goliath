@@ -1,3 +1,4 @@
+#include "osx_main.h"
 #include "goliath.h"
 #include <AppKit/AppKit.h>
 #include <AudioToolbox/AudioToolbox.h>
@@ -10,21 +11,6 @@ global_variable float GlobalRenderHeight = 768;
 
 global_variable bool Running = true;
 
-struct MacOSSoundOutput {
-  int samplesPerSecond;
-  int bytesPerSample;
-  int toneHz;
-  int wavePeriod;
-  real32 tSine;
-  uint32 runningSampleIndex;
-  uint32 bufferSize;
-  uint32 writeCursor;
-  uint32 playCursor;
-  void *data;
-};
-
-global_variable int offsetX = 0;
-global_variable int offsetY = 0;
 global_variable int bytesPerPixel = 4;
 global_variable game_offscreen_buffer Buffer = {};
 
@@ -71,8 +57,8 @@ void macOSRedrawBuffer(NSWindow *window) {
 
 @interface OSXGoliathController : NSObject
 // LeftThumbstick
-@property float leftThumbstickX;
-@property float leftThumbstickY;
+@property float LeftThumbstickX;
+@property float LeftThumbstickY;
 
 // DPAD
 @property NSInteger dpadX;
@@ -152,10 +138,10 @@ static void macOSInitGameControllers() {
                                   kCFRunLoopDefaultMode);
   NSLog(@"OSXGoliath controller initialized.");
 }
-const unsigned short leftArrowKeyCode = 0x7B;
-const unsigned short rightArrowKeyCode = 0x7C;
-const unsigned short downArrowKeyCode = 0x7D;
-const unsigned short upArrowKeyCode = 0x7E;
+const unsigned short LeftArrowKeyCode = 0x7B;
+const unsigned short RightArrowKeyCode = 0x7C;
+const unsigned short DownArrowKeyCode = 0x7D;
+const unsigned short UpArrowKeyCode = 0x7E;
 const unsigned short aKeyCode = 0x00;
 const unsigned short sKeyCode = 0x01;
 const unsigned short dKeyCode = 0x02;
@@ -163,22 +149,22 @@ const unsigned short fKeyCode = 0x03;
 const unsigned short qKeyCode = 0x0C;
 const unsigned short rKeyCode = 0x0F;
 
-static void updateKeyboardControllerWith(NSEvent *event) {
+static void UpdateKeyboardControllerWith(NSEvent *event) {
   switch ([event type]) {
   case NSEventTypeKeyDown:
-    if (event.keyCode == leftArrowKeyCode && keyboardController.dpadX != 1) {
+    if (event.keyCode == LeftArrowKeyCode && keyboardController.dpadX != 1) {
       keyboardController.dpadX = -1;
       break;
     }
-    if (event.keyCode == rightArrowKeyCode && keyboardController.dpadX != -1) {
+    if (event.keyCode == RightArrowKeyCode && keyboardController.dpadX != -1) {
       keyboardController.dpadX = 1;
       break;
     }
-    if (event.keyCode == downArrowKeyCode && keyboardController.dpadY != -1) {
+    if (event.keyCode == DownArrowKeyCode && keyboardController.dpadY != -1) {
       keyboardController.dpadY = 1;
       break;
     }
-    if (event.keyCode == upArrowKeyCode && keyboardController.dpadY != 1) {
+    if (event.keyCode == UpArrowKeyCode && keyboardController.dpadY != 1) {
       keyboardController.dpadY = -1;
       break;
     }
@@ -207,19 +193,19 @@ static void updateKeyboardControllerWith(NSEvent *event) {
       break;
     }
   case NSEventTypeKeyUp:
-    if (event.keyCode == leftArrowKeyCode && keyboardController.dpadX == -1) {
+    if (event.keyCode == LeftArrowKeyCode && keyboardController.dpadX == -1) {
       keyboardController.dpadX = 0;
       break;
     }
-    if (event.keyCode == rightArrowKeyCode && keyboardController.dpadX == 1) {
+    if (event.keyCode == RightArrowKeyCode && keyboardController.dpadX == 1) {
       keyboardController.dpadX = 0;
       break;
     }
-    if (event.keyCode == downArrowKeyCode && keyboardController.dpadY == 1) {
+    if (event.keyCode == DownArrowKeyCode && keyboardController.dpadY == 1) {
       keyboardController.dpadY = 0;
       break;
     }
-    if (event.keyCode == upArrowKeyCode && keyboardController.dpadY == -1) {
+    if (event.keyCode == UpArrowKeyCode && keyboardController.dpadY == -1) {
       keyboardController.dpadY = 0;
       break;
     }
@@ -390,9 +376,6 @@ global_variable AudioComponentInstance audioUnit;
 
 internal_usage void macOSInitSound() {
   soundOutput.samplesPerSecond = 48000;
-  soundOutput.toneHz = 256;
-  soundOutput.tSine = 0.0f;
-  soundOutput.wavePeriod = soundOutput.samplesPerSecond / soundOutput.toneHz;
   int audioFrameSize = sizeof(int16) * 2;
   int numberOfSeconds = 2;
   soundOutput.bytesPerSample = audioFrameSize;
@@ -409,7 +392,7 @@ internal_usage void macOSInitSound() {
   AudioComponent outputComponent = AudioComponentFindNext(NULL, &acd);
   OSStatus status = AudioComponentInstanceNew(outputComponent, &audioUnit);
   if (status != noErr) {
-    NSLog(@"There was an error setting up sound");
+    NSLog(@"There was an error setting Up sound");
     return;
   }
   AudioStreamBasicDescription audioDescriptor;
@@ -428,7 +411,7 @@ internal_usage void macOSInitSound() {
                                 kAudioUnitScope_Input, 0, &audioDescriptor,
                                 sizeof(audioDescriptor));
   if (status != noErr) {
-    NSLog(@"There was an error setting up the audio unit");
+    NSLog(@"There was an error setting Up the audio unit");
     return;
   }
   AURenderCallbackStruct renderCallback;
@@ -437,7 +420,7 @@ internal_usage void macOSInitSound() {
                                 kAudioUnitScope_Global, 0, &renderCallback,
                                 sizeof(renderCallback));
   if (status != noErr) {
-    NSLog(@"There was an error setting up the audio unit");
+    NSLog(@"There was an error setting Up the audio unit");
     return;
   }
   AudioUnitInitialize(audioUnit);
@@ -472,6 +455,14 @@ static void macOSFillSoundBuffer(int byteToLock, int bytesToWrite,
   }
 }
 
+static void macOSProcessGameControllerButton(game_button_state *OldState,
+                                             game_button_state *NewState,
+                                             bool32 IsDown) {
+  NewState->EndedDown = IsDown;
+  NewState->HalfTransitionCount +=
+      ((NewState->EndedDown == OldState->EndedDown) ? 0 : 1);
+}
+
 int main(int argc, const char *argv[]) {
   GoliathMainWindowDelegate *mainWindowDelegate =
       [[GoliathMainWindowDelegate alloc] init];
@@ -498,15 +489,18 @@ int main(int argc, const char *argv[]) {
   macOSInitGameControllers();
   macOSInitSound();
 
-  uint64 currentTime = mach_absolute_time();
-  uint64 lastCounter = currentTime;
-  real32 frameTime = 0.0f;
+  game_input input[2] = {};
+  game_input *NewInput = &input[0];
+  game_input *OldInput = &input[1];
 
   int16 *samples =
       (int16 *)calloc(soundOutput.samplesPerSecond, soundOutput.bytesPerSample);
   int latencySampleCount = soundOutput.samplesPerSecond / 15;
   int targetQueueBytes = latencySampleCount * soundOutput.bytesPerSample;
 
+  uint64 currentTime = mach_absolute_time();
+  uint64 lastCounter = currentTime;
+  real32 frameTime = 0.0f;
   while (Running) {
     int targetCursor = ((soundOutput.playCursor +
                          (latencySampleCount * soundOutput.bytesPerSample)) %
@@ -526,46 +520,92 @@ int main(int argc, const char *argv[]) {
     SoundBuffer.SampleCount = bytesToWrite / soundOutput.bytesPerSample;
     SoundBuffer.Samples = samples;
 
-    GameUpdateAndRender(&Buffer, offsetX, offsetY, &SoundBuffer,
-                        soundOutput.toneHz);
+    GameUpdateAndRender(NewInput, &Buffer, &SoundBuffer);
     macOSFillSoundBuffer(byteToLock, bytesToWrite, &SoundBuffer);
     macOSRedrawBuffer(window);
+
+    game_input *Temp = NewInput;
+    NewInput = OldInput;
+    OldInput = Temp;
 
     OSXGoliathController *controller = keyboardController;
 
     if (controller != nil) {
 
-      if (controller.buttonAState == true) {
-        offsetX++;
-      }
+      game_controller_input *OldController = &OldInput->Controllers[0];
+      game_controller_input *NewController = &NewInput->Controllers[0];
 
-      if (controller.buttonLeftShoulderState == true) {
-        offsetX--;
-      }
+      macOSProcessGameControllerButton(&(OldController->Down),
+                                       &(NewController->Down),
+                                       controller.buttonAState);
 
-      if (controller.buttonRightShoulderState == true) {
-        offsetX++;
-      }
+      macOSProcessGameControllerButton(&(OldController->Right),
+                                       &(NewController->Right),
+                                       controller.buttonBState);
+
+      macOSProcessGameControllerButton(&(OldController->Left),
+                                       &(NewController->Left),
+                                       controller.buttonXState);
+
+      macOSProcessGameControllerButton(
+          &(OldController->Up), &(NewController->Up), controller.buttonYState);
+
+      macOSProcessGameControllerButton(&(OldController->LeftShoulder),
+                                       &(NewController->LeftShoulder),
+                                       controller.buttonLeftShoulderState);
+
+      macOSProcessGameControllerButton(&(OldController->RightShoulder),
+                                       &(NewController->RightShoulder),
+                                       controller.buttonRightShoulderState);
 
       if (controller.dpadX == 1) {
-        offsetX++;
+        macOSProcessGameControllerButton(&(OldController->Right),
+                                         &(NewController->Right), true);
+        macOSProcessGameControllerButton(&(OldController->Left),
+                                         &(NewController->Left), false);
       }
 
       if (controller.dpadX == -1) {
-        offsetX--;
+        macOSProcessGameControllerButton(&(OldController->Right),
+                                         &(NewController->Right), false);
+        macOSProcessGameControllerButton(&(OldController->Left),
+                                         &(NewController->Left), true);
       }
 
       if (controller.dpadY == 1) {
-        offsetY++;
+        macOSProcessGameControllerButton(&(OldController->Up),
+                                         &(NewController->Up), true);
+        macOSProcessGameControllerButton(&(OldController->Down),
+                                         &(NewController->Down), false);
       }
 
       if (controller.dpadY == -1) {
-        offsetY--;
+        macOSProcessGameControllerButton(&(OldController->Up),
+                                         &(NewController->Up), false);
+        macOSProcessGameControllerButton(&(OldController->Down),
+                                         &(NewController->Down), true);
       }
 
-      soundOutput.toneHz = 512 + (int)(controller.leftThumbstickY * 10.0f);
-      soundOutput.wavePeriod =
-          soundOutput.samplesPerSecond / soundOutput.toneHz;
+      NewController->IsAnalog = true;
+      NewController->StartX = OldController->EndX;
+      NewController->StartY = OldController->EndY;
+
+      // TODO: (kev)  The analog value returned has a range of zero to 255.
+      //              Zero to 127 means negative, and 128 to 255 means positive.
+      //
+      //              How to normalize and produce a real32 with a range of -1
+      //              to +1?
+      //
+      //              If less than 127, subtract 127, and divide by 127.
+      //              If greater than 127, subtract from 255, divide by 127, and
+      //              make positive.
+      //
+      //              Take another pass at this later and see if we could get
+      //              something more accurate.
+      NewController->EndX = (controller.LeftThumbstickX - 127.5) / 127.5;
+      NewController->EndY = (controller.LeftThumbstickY - 127.5) / 127.5;
+      NewController->MinX = NewController->MaxX = NewController->EndX;
+      NewController->MinY = NewController->MaxY = NewController->EndY;
     }
     NSEvent *event;
 
@@ -578,7 +618,7 @@ int main(int argc, const char *argv[]) {
       if (event != nil && controller == keyboardController &&
               (event.type == NSEventTypeKeyDown) ||
           (event.type == NSEventTypeKeyUp)) {
-        updateKeyboardControllerWith(event);
+        UpdateKeyboardControllerWith(event);
       }
       switch ([event type]) {
       default:
