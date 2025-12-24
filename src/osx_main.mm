@@ -1,90 +1,59 @@
-#include "osx_main.h"
-#include "goliath_types.h"
+#include "goliath.h"
+#include <AppKit/AppKit.h>
 #include <AudioToolbox/AudioToolbox.h>
 #include <IOKit/hid/IOHIDLib.h>
-#include <Security/cssmconfig.h>
 #include <mach/mach_init.h>
 #include <mach/mach_time.h>
-#include <os/clock.h>
 
 global_variable float GlobalRenderWidth = 1024;
 global_variable float GlobalRenderHeight = 768;
 
 global_variable bool Running = true;
 
-typedef struct macos_offscreen_buffer {
-  uint8 *memory;
-  int bitmapWidth;
-  int bitmapHeight;
-  int bytesPerPixel = 4;
-  int pitch;
-} OffscreenBuffer;
-
-OffscreenBuffer bufferStruct;
-OffscreenBuffer *buffer = &bufferStruct;
-
-struct macos_window_dimension {
-  int width;
-  int height;
+struct MacOSSoundOutput {
+  int samplesPerSecond;
+  int bytesPerSample;
+  int toneHz;
+  int wavePeriod;
+  real32 tSine;
+  uint32 bufferSize;
+  uint32 writeCursor;
+  uint32 playCursor;
+  void *data;
 };
+
+int bytesPerPixel = 4;
 
 global_variable int offsetX = 0;
 global_variable int offsetY = 0;
+global_variable game_offscreen_buffer Buffer = {};
 
-void macOSRefreshBuffer(NSWindow *window, OffscreenBuffer *buffer) {
-  if (buffer->memory) {
-    free(buffer->memory);
+void macOSRefreshBuffer(NSWindow *window, game_offscreen_buffer *buffer) {
+  if (buffer->Memory) {
+    free(buffer->Memory);
   }
-  buffer->bitmapWidth = window.contentView.bounds.size.width;
-  buffer->bitmapHeight = window.contentView.bounds.size.height;
-  buffer->pitch = buffer->bitmapWidth * buffer->bytesPerPixel;
-  buffer->memory = (uint8 *)malloc(buffer->pitch * buffer->bitmapHeight);
+  buffer->Width = window.contentView.bounds.size.width;
+  buffer->Height = window.contentView.bounds.size.height;
+  buffer->Pitch = buffer->Width * bytesPerPixel;
+  buffer->Memory = (uint8 *)malloc(buffer->Pitch * buffer->Height);
 }
 
-void renderWeirdGradient(OffscreenBuffer *buffer) {
-  int width = buffer->bitmapWidth;
-  int height = buffer->bitmapHeight;
-  uint8 *row = (uint8 *)buffer->memory;
-
-  for (int y = 0; y < height; ++y) {
-
-    uint8 *byteInPixel = (uint8 *)row;
-
-    for (int x = 0; x < width; ++x) {
-      // red
-      *byteInPixel = 0;
-      ++byteInPixel;
-
-      // green
-      *byteInPixel = (uint8)y;
-      ++byteInPixel;
-
-      // blue
-      *byteInPixel = (uint8)x + (uint8)offsetX;
-      ++byteInPixel;
-
-      // alpha
-      *byteInPixel = 255;
-      ++byteInPixel;
-    }
-    row += buffer->pitch;
-  }
-}
-
-void macOSRedrawBuffer(NSWindow *window, OffscreenBuffer *buffer) {
+void macOSRedrawBuffer(NSWindow *window) {
   @autoreleasepool {
+    uint8 *plane = (uint8 *)Buffer.Memory;
+
     NSBitmapImageRep *rep = [[[NSBitmapImageRep alloc]
-        initWithBitmapDataPlanes:&buffer->memory
-                      pixelsWide:buffer->bitmapWidth
-                      pixelsHigh:buffer->bitmapHeight
+        initWithBitmapDataPlanes:&plane
+                      pixelsWide:Buffer.Width
+                      pixelsHigh:Buffer.Height
                    bitsPerSample:8
                  samplesPerPixel:4
                         hasAlpha:YES
                         isPlanar:NO
                   colorSpaceName:NSDeviceRGBColorSpace
-                     bytesPerRow:buffer->pitch
-                    bitsPerPixel:buffer->bytesPerPixel * 8] autorelease];
-    NSSize imageSize = NSMakeSize(buffer->bitmapWidth, buffer->bitmapHeight);
+                     bytesPerRow:Buffer.Pitch
+                    bitsPerPixel:bytesPerPixel * 8] autorelease];
+    NSSize imageSize = NSMakeSize(Buffer.Width, Buffer.Height);
     NSImage *image = [[[NSImage alloc] initWithSize:imageSize] autorelease];
     [image addRepresentation:rep];
     window.contentView.layer.contents = image;
@@ -102,9 +71,9 @@ void macOSRedrawBuffer(NSWindow *window, OffscreenBuffer *buffer) {
 
 - (void)windowDidResize:(NSNotification *)notification {
   NSWindow *window = (NSWindow *)notification.object;
-  macOSRefreshBuffer(window, buffer);
-  renderWeirdGradient(buffer);
-  macOSRedrawBuffer(window, buffer);
+  macOSRefreshBuffer(window, &Buffer);
+  GameUpdateAndRender(&Buffer, offsetX, offsetY);
+  macOSRedrawBuffer(window);
 }
 
 @end
@@ -460,7 +429,7 @@ OSStatus circularBufferRenderCallback(void *inRefCon,
 
 global_variable AudioComponentInstance audioUnit;
 
-internal void macOSInitSound() {
+internal_usage void macOSInitSound() {
   // create a two second circular buffer
   soundOutput.samplesPerSecond = 48000;
   soundOutput.toneHz = 256;
@@ -517,7 +486,7 @@ internal void macOSInitSound() {
   AudioOutputUnitStart(audioUnit);
 }
 
-internal void updateSoundBuffer() {
+internal_usage void updateSoundBuffer() {
   local_persist uint32 runningSampleIndex = 0;
   int latencySampleCount = soundOutput.samplesPerSecond / 15;
   int targetQueueBytes = latencySampleCount * soundOutput.bytesPerSample;
@@ -586,7 +555,7 @@ int main(int argc, const char *argv[]) {
   [window setDelegate:mainWindowDelegate];
   window.contentView.wantsLayer = YES;
 
-  macOSRefreshBuffer(window, buffer);
+  macOSRefreshBuffer(window, &Buffer);
   macOSInitGameControllers();
   macOSInitSound();
 
@@ -595,8 +564,8 @@ int main(int argc, const char *argv[]) {
   real32 frameTime = 0.0f;
 
   while (Running) {
-    renderWeirdGradient(buffer);
-    macOSRedrawBuffer(window, buffer);
+    GameUpdateAndRender(&Buffer, offsetX, offsetY);
+    macOSRedrawBuffer(window);
     updateSoundBuffer();
 
     OSXGoliathController *controller = keyboardController;

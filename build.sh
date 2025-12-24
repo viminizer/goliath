@@ -10,7 +10,9 @@ rm -rf build
 mkdir build
 pushd build
 
-clang -g ../src/osx_main.mm \
+clang++ -g \
+  ../src/goliath.cpp \
+  ../src/osx_main.mm \
   $OSX_LD_FLAGS \
   -o goliath
 

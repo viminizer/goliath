@@ -1,7 +1,8 @@
-#include <AppKit/AppKit.h>
+#ifndef GOLIATH_H
+#define GOLIATH_H
 #include <stdint.h>
 
-#define internal static
+#define internal_usage static
 #define local_persist static
 #define global_variable static
 
@@ -17,3 +18,15 @@ typedef uint64_t uint64;
 
 typedef float real32;
 typedef double real64;
+
+struct game_offscreen_buffer {
+  void *Memory;
+  int Width;
+  int Height;
+  int Pitch;
+};
+
+void GameUpdateAndRender(game_offscreen_buffer *Buffer, int BlueOffset,
+                         int GreenOffset);
+
+#endif // GOLIATH_H
