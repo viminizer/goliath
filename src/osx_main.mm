@@ -16,16 +16,16 @@ struct MacOSSoundOutput {
   int toneHz;
   int wavePeriod;
   real32 tSine;
+  uint32 runningSampleIndex;
   uint32 bufferSize;
   uint32 writeCursor;
   uint32 playCursor;
   void *data;
 };
 
-int bytesPerPixel = 4;
-
 global_variable int offsetX = 0;
 global_variable int offsetY = 0;
+global_variable int bytesPerPixel = 4;
 global_variable game_offscreen_buffer Buffer = {};
 
 void macOSRefreshBuffer(NSWindow *window, game_offscreen_buffer *buffer) {
@@ -64,18 +64,9 @@ void macOSRedrawBuffer(NSWindow *window) {
 @end
 
 @implementation GoliathMainWindowDelegate
-
 - (void)windowWillClose:(id)sender {
   Running = false;
 }
-
-- (void)windowDidResize:(NSNotification *)notification {
-  NSWindow *window = (NSWindow *)notification.object;
-  macOSRefreshBuffer(window, &Buffer);
-  GameUpdateAndRender(&Buffer, offsetX, offsetY);
-  macOSRedrawBuffer(window);
-}
-
 @end
 
 @interface OSXGoliathController : NSObject
@@ -107,7 +98,6 @@ global_variable OSXGoliathController *keyboardController = nil;
 @end
 
 @implementation GoliathKeyIgnoringWindow
-
 - (void)keyDown:(NSEvent *)event {
 }
 @end
@@ -162,7 +152,6 @@ static void macOSInitGameControllers() {
                                   kCFRunLoopDefaultMode);
   NSLog(@"OSXGoliath controller initialized.");
 }
-
 const unsigned short leftArrowKeyCode = 0x7B;
 const unsigned short rightArrowKeyCode = 0x7C;
 const unsigned short downArrowKeyCode = 0x7D;
@@ -181,103 +170,83 @@ static void updateKeyboardControllerWith(NSEvent *event) {
       keyboardController.dpadX = -1;
       break;
     }
-
     if (event.keyCode == rightArrowKeyCode && keyboardController.dpadX != -1) {
       keyboardController.dpadX = 1;
       break;
     }
-
     if (event.keyCode == downArrowKeyCode && keyboardController.dpadY != -1) {
       keyboardController.dpadY = 1;
       break;
     }
-
     if (event.keyCode == upArrowKeyCode && keyboardController.dpadY != 1) {
       keyboardController.dpadY = -1;
       break;
     }
-
     if (event.keyCode == aKeyCode) {
       keyboardController.buttonAState = 1;
       break;
     }
-
     if (event.keyCode == sKeyCode) {
       keyboardController.buttonBState = 1;
       break;
     }
-
     if (event.keyCode == dKeyCode) {
       keyboardController.buttonXState = 1;
       break;
     }
-
     if (event.keyCode == fKeyCode) {
       keyboardController.buttonYState = 1;
       break;
     }
-
     if (event.keyCode == qKeyCode) {
       keyboardController.buttonLeftShoulderState = 1;
       break;
     }
-
     if (event.keyCode == rKeyCode) {
       keyboardController.buttonRightShoulderState = 1;
       break;
     }
-
   case NSEventTypeKeyUp:
     if (event.keyCode == leftArrowKeyCode && keyboardController.dpadX == -1) {
       keyboardController.dpadX = 0;
       break;
     }
-
     if (event.keyCode == rightArrowKeyCode && keyboardController.dpadX == 1) {
       keyboardController.dpadX = 0;
       break;
     }
-
     if (event.keyCode == downArrowKeyCode && keyboardController.dpadY == 1) {
       keyboardController.dpadY = 0;
       break;
     }
-
     if (event.keyCode == upArrowKeyCode && keyboardController.dpadY == -1) {
       keyboardController.dpadY = 0;
       break;
     }
-
     if (event.keyCode == aKeyCode) {
       keyboardController.buttonAState = 0;
       break;
     }
-
     if (event.keyCode == sKeyCode) {
       keyboardController.buttonBState = 0;
       break;
     }
-
     if (event.keyCode == dKeyCode) {
       keyboardController.buttonXState = 0;
       break;
     }
-
     if (event.keyCode == fKeyCode) {
       keyboardController.buttonYState = 0;
       break;
     }
-
     if (event.keyCode == qKeyCode) {
       keyboardController.buttonLeftShoulderState = 0;
       break;
     }
-
     if (event.keyCode == rKeyCode) {
       keyboardController.buttonRightShoulderState = 0;
       break;
     }
-
   default:
     break;
   }
@@ -292,9 +261,7 @@ static void controllerConnected(void *context, IOReturn result, void *sender,
       device, CFSTR(kIOHIDVendorIDKey)) unsignedIntegerValue];
   NSUInteger productID = [(__bridge NSNumber *)IOHIDDeviceGetProperty(
       device, CFSTR(kIOHIDProductIDKey)) unsignedIntegerValue];
-
   OSXGoliathController *controller = [[OSXGoliathController alloc] init];
-
   if (vendorID == 0x054C && productID == 0x5C4) {
     NSLog(@"Sony Dualshock 4 detected.");
     controller->_lThumbXUsageID = kHIDUsage_GD_X;
@@ -313,7 +280,6 @@ static void controllerConnected(void *context, IOReturn result, void *sender,
     @{@(kIOHIDElementUsagePageKey) : @(kHIDPage_GenericDesktop)},
     @{@(kIOHIDElementUsagePageKey) : @(kHIDPage_Button)},
   ]);
-
   connectedController = controller;
 }
 
@@ -322,13 +288,10 @@ static void controllerInput(void *context, IOReturn result, void *sender,
   if (result != kIOReturnSuccess) {
     return;
   }
-
   OSXGoliathController *controller = (__bridge OSXGoliathController *)context;
-
   IOHIDElementRef element = IOHIDValueGetElement(value);
   uint32 usagePage = IOHIDElementGetUsagePage(element);
   uint32 usage = IOHIDElementGetUsage(element);
-
   if (usagePage == kHIDPage_Button) {
     BOOL buttonState = (BOOL)IOHIDValueGetIntegerValue(value);
     if (usage == controller->_buttonAUsageID) {
@@ -392,15 +355,11 @@ static void controllerInput(void *context, IOReturn result, void *sender,
       dpadY = 0;
       break;
     }
-
     controller->_dpadX = dpadX;
     controller->_dpadY = dpadY;
   }
 }
-
 @end
-
-const int samplesPerSecond = 48000;
 
 global_variable MacOSSoundOutput soundOutput = {};
 
@@ -430,7 +389,6 @@ OSStatus circularBufferRenderCallback(void *inRefCon,
 global_variable AudioComponentInstance audioUnit;
 
 internal_usage void macOSInitSound() {
-  // create a two second circular buffer
   soundOutput.samplesPerSecond = 48000;
   soundOutput.toneHz = 256;
   soundOutput.tSine = 0.0f;
@@ -486,24 +444,10 @@ internal_usage void macOSInitSound() {
   AudioOutputUnitStart(audioUnit);
 }
 
-internal_usage void updateSoundBuffer() {
-  local_persist uint32 runningSampleIndex = 0;
-  int latencySampleCount = soundOutput.samplesPerSecond / 15;
-  int targetQueueBytes = latencySampleCount * soundOutput.bytesPerSample;
-  int targetCursor = ((soundOutput.playCursor +
-                       (latencySampleCount * soundOutput.bytesPerSample)) %
-                      soundOutput.bufferSize);
-  int byteToLock = (runningSampleIndex * soundOutput.bytesPerSample) %
-                   soundOutput.bufferSize;
-  int bytesToWrite;
-  if (byteToLock == targetCursor) {
-    bytesToWrite = soundOutput.bufferSize;
-  } else if (byteToLock > targetCursor) {
-    bytesToWrite = (soundOutput.bufferSize - byteToLock);
-    bytesToWrite += targetCursor;
-  } else {
-    bytesToWrite = targetCursor - byteToLock;
-  }
+static void macOSFillSoundBuffer(int byteToLock, int bytesToWrite,
+                                 game_sound_output_buffer *SoundBuffer) {
+
+  int16 *samples = SoundBuffer->Samples;
   void *region1 = (uint8 *)soundOutput.data + byteToLock;
   int region1Size = bytesToWrite;
   if (region1Size + byteToLock > soundOutput.bufferSize) {
@@ -514,22 +458,17 @@ internal_usage void updateSoundBuffer() {
   int region1SampleCount = region1Size / soundOutput.bytesPerSample;
   int16 *sampleOut = (int16 *)region1;
   for (int sampleIndex = 0; sampleIndex < region1SampleCount; ++sampleIndex) {
-    real32 sineValue = sinf(soundOutput.tSine);
-    int16 sampleValue = (int16)(sineValue * 5000);
-    *sampleOut++ = sampleValue;
-    *sampleOut++ = sampleValue;
-    soundOutput.tSine += 2.0f * M_PI * 1.0f / (real32)soundOutput.wavePeriod;
-    runningSampleIndex++;
+    *sampleOut++ = *samples++;
+    *sampleOut++ = *samples++;
+    ++soundOutput.runningSampleIndex;
   }
+
   int region2SampleCount = region2Size / soundOutput.bytesPerSample;
   sampleOut = (int16 *)region2;
   for (int sampleIndex = 0; sampleIndex < region2SampleCount; ++sampleIndex) {
-    real32 sineValue = sinf(soundOutput.tSine);
-    int16 sampleValue = (int16)(sineValue * 5000);
-    *sampleOut++ = sampleValue;
-    *sampleOut++ = sampleValue;
-    soundOutput.tSine += 2.0f * M_PI * 1.0f / (real32)soundOutput.wavePeriod;
-    runningSampleIndex++;
+    *sampleOut++ = *samples++;
+    *sampleOut++ = *samples++;
+    ++soundOutput.runningSampleIndex;
   }
 }
 
@@ -563,10 +502,34 @@ int main(int argc, const char *argv[]) {
   uint64 lastCounter = currentTime;
   real32 frameTime = 0.0f;
 
+  int16 *samples =
+      (int16 *)calloc(soundOutput.samplesPerSecond, soundOutput.bytesPerSample);
+  int latencySampleCount = soundOutput.samplesPerSecond / 15;
+  int targetQueueBytes = latencySampleCount * soundOutput.bytesPerSample;
+
   while (Running) {
-    GameUpdateAndRender(&Buffer, offsetX, offsetY);
+    int targetCursor = ((soundOutput.playCursor +
+                         (latencySampleCount * soundOutput.bytesPerSample)) %
+                        soundOutput.bufferSize);
+    int byteToLock =
+        (soundOutput.runningSampleIndex * soundOutput.bytesPerSample) %
+        soundOutput.bufferSize;
+    int bytesToWrite;
+    if (byteToLock > targetCursor) {
+      bytesToWrite = (soundOutput.bufferSize - byteToLock);
+      bytesToWrite += targetCursor;
+    } else {
+      bytesToWrite = targetCursor - byteToLock;
+    }
+    game_sound_output_buffer SoundBuffer = {};
+    SoundBuffer.SamplesPerSecond = soundOutput.samplesPerSecond;
+    SoundBuffer.SampleCount = bytesToWrite / soundOutput.bytesPerSample;
+    SoundBuffer.Samples = samples;
+
+    GameUpdateAndRender(&Buffer, offsetX, offsetY, &SoundBuffer,
+                        soundOutput.toneHz);
+    macOSFillSoundBuffer(byteToLock, bytesToWrite, &SoundBuffer);
     macOSRedrawBuffer(window);
-    updateSoundBuffer();
 
     OSXGoliathController *controller = keyboardController;
 
