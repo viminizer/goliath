@@ -1,19 +1,25 @@
 #!/bin/bash
+
 set -e
 
-APP_NAME="goliath.app"
-APP_PATH="build/$APP_NAME"
+echo "Running Goliath Game Engine (SDL)"
 
-if [ ! -d "$APP_PATH" ]; then
-  echo "Error: $APP_PATH not found. Build the app first."
-  exit 1
-fi
+rm -rf build
+mkdir build
+pushd build
 
-# Ensure executable permission
-chmod +x "$APP_PATH/Contents/MacOS/goliath"
+CFLAGS="$(sdl2-config --cflags)"
+LDFLAGS="$(sdl2-config --libs)"
 
-# Remove quarantine flag if present (dev builds)
-xattr -dr com.apple.quarantine "$APP_PATH" 2>/dev/null || true
+clang++ \
+  -DGOLIATH_INTERNAL=1 \
+  -DGOLIATH_SLOW=1 \
+  $CFLAGS \
+  ../src/goliath.cpp \
+  ../src/sdl_goliath.cpp \
+  $LDFLAGS \
+  -o goliath
 
-# Launch the app
-open "$APP_PATH"
+./goliath
+
+popd

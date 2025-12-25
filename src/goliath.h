@@ -2,6 +2,22 @@
 #define GOLIATH_H
 #include <stdint.h>
 
+#if GOLIATH_SLOW
+#define Assert(Expression)                                                     \
+  do {                                                                         \
+    if (!(Expression)) {                                                       \
+      __builtin_trap();                                                        \
+    }                                                                          \
+  } while (0)
+#else
+#define Assert(Expression)
+#endif
+
+#define Kilobytes(Value) ((Value) * 1024LL)
+#define Megabytes(Value) (Kilobytes(Value) * 1024LL)
+#define Gigabytes(Value) (Megabytes(Value) * 1024LL)
+#define Terabytes(Value) (Gigabytes(Value) * 1024LL)
+
 #define internal_usage static
 #define local_persist static
 #define global_variable static
@@ -71,7 +87,21 @@ struct game_input {
   game_controller_input Controllers[4];
 };
 
-void GameUpdateAndRender(game_input *Input, game_offscreen_buffer *Buffer,
+struct game_memory {
+  bool32 IsInitialized;
+  uint64 PermanentStorageSize;
+  void *PermanentStorage;
+  uint64 TransientStorageSize;
+  void *TransientStorage;
+};
+
+void GameUpdateAndRender(game_memory *GameMemory, game_input *Input,
+                         game_offscreen_buffer *Buffer,
                          game_sound_output_buffer *SoundBuffer);
 
+struct game_state {
+  int ToneHZ;
+  int GreenOffset;
+  int BlueOffset;
+};
 #endif // GOLIATH_H

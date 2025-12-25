@@ -1,5 +1,5 @@
 
-#include "goliath.h"
+#include "../goliath.h"
 struct MacOSSoundOutput {
   int samplesPerSecond;
   int bytesPerSample;
