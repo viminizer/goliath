@@ -1,0 +1,7 @@
+[
+  {
+    "directory": "/Users/mac/Desktop/github/handmade/goliath",
+    "command": "clang++ -I/usr/local/include/SDL2 -D_THREAD_SAFE -g -O0 -c /Users/mac/Desktop/github/handmade/goliath/src/sdl_goliath.cpp",
+    "file": "/Users/mac/Desktop/github/handmade/goliath/src/sdl_goliath.cpp"
+  }
+]
