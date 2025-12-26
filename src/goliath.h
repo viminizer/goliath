@@ -1,23 +1,6 @@
 #ifndef GOLIATH_H
 #define GOLIATH_H
 #include <stdint.h>
-
-#if GOLIATH_SLOW
-#define Assert(Expression)                                                     \
-  do {                                                                         \
-    if (!(Expression)) {                                                       \
-      __builtin_trap();                                                        \
-    }                                                                          \
-  } while (0)
-#else
-#define Assert(Expression)
-#endif
-
-#define Kilobytes(Value) ((Value) * 1024LL)
-#define Megabytes(Value) (Kilobytes(Value) * 1024LL)
-#define Gigabytes(Value) (Megabytes(Value) * 1024LL)
-#define Terabytes(Value) (Gigabytes(Value) * 1024LL)
-
 #define internal_usage static
 #define local_persist static
 #define global_variable static
@@ -35,6 +18,35 @@ typedef uint64_t uint64;
 typedef float real32;
 typedef double real64;
 typedef bool bool32;
+
+#if GOLIATH_SLOW
+#define Assert(Expression)                                                     \
+  do {                                                                         \
+    if (!(Expression)) {                                                       \
+      __builtin_trap();                                                        \
+    }                                                                          \
+  } while (0)
+#else
+#define Assert(Expression)
+#endif
+
+#define ArrayCount(Array) (sizeof(Array) / sizeof(Array[0]))
+
+#if GOLIATH_INTERNAL
+struct debug_read_file_result {
+  void *Contents;
+  uint32 ContentSize;
+};
+debug_read_file_result DEBUGPlatformReadEntireFile(char *Filename);
+void DEBUGPlatformFreeFileMemory(void *Memory);
+bool32 DEBUGPlatformWriteEntireFile(char *Filename, uint32 MemorySize,
+                                    void *Memory);
+#endif
+
+#define Kilobytes(Value) ((Value) * 1024LL)
+#define Megabytes(Value) (Kilobytes(Value) * 1024LL)
+#define Gigabytes(Value) (Megabytes(Value) * 1024LL)
+#define Terabytes(Value) (Gigabytes(Value) * 1024LL)
 
 struct game_offscreen_buffer {
   void *Memory;

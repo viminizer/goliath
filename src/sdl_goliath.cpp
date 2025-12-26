@@ -1,5 +1,8 @@
 #include "sdl_goliath.h"
+#include <sys/fcntl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <x86intrin.h>
 
 #ifndef MAP_ANONYMOUS
@@ -12,12 +15,79 @@ global_variable sdl_offscreen_buffer GlobalBackbuffer;
 SDL_GameController *ControllerHandles[MAX_CONTROLLERS];
 SDL_Haptic *RumbleHandles[MAX_CONTROLLERS];
 
+inline uint32 SafeTruncateUInt64(uint64 Value) {
+  Assert(Value <= 0xFFFFFFFF);
+  uint32 FileSize32 = (uint32)Value;
+  return FileSize32;
+}
+
+void DEBUGPlatformFreeFileMemory(void *Memory) { free(Memory); }
+
+debug_read_file_result DEBUGPlatformReadEntireFile(char *Filename) {
+  int FileHandle = open(Filename, O_RDONLY);
+  printf("FILE HANLE %d\n", FileHandle);
+  debug_read_file_result Result = {};
+  if (FileHandle < 0) {
+    printf("Failed to load file %s\n", Filename);
+    return (Result);
+  }
+  struct stat FileStatus;
+  if (fstat(FileHandle, &FileStatus) == -1) {
+    close(FileHandle);
+    return Result;
+  }
+  Result.ContentSize = SafeTruncateUInt64(FileStatus.st_size);
+  Result.Contents = malloc(Result.ContentSize);
+  if (Result.Contents) {
+    uint32 BytesToRead = Result.ContentSize;
+    uint8 *NextByteLocation = (uint8 *)Result.Contents;
+    while (BytesToRead) {
+      uint32 BytesRead = read(FileHandle, NextByteLocation, BytesToRead);
+      if (BytesRead == -1) {
+        free(Result.Contents);
+        Result.Contents = 0;
+        Result.ContentSize = 0;
+        close(FileHandle);
+        return Result;
+      }
+      BytesToRead -= BytesRead;
+      NextByteLocation += BytesRead;
+    }
+
+  } else {
+    DEBUGPlatformFreeFileMemory(Result.Contents);
+    Result = {};
+  }
+  return (Result);
+}
+
+bool32 DEBUGPlatformWriteEntireFile(char *Filename, uint32 MemorySize,
+                                    void *Memory) {
+  int FileHandle =
+      open(Filename, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+  if (FileHandle == -1) {
+    return false;
+  }
+  uint32 BytesToWrite = MemorySize;
+  uint8 *NextByteLocation = (uint8 *)Memory;
+  while (BytesToWrite) {
+    uint32 BytesWritten = write(FileHandle, NextByteLocation, BytesToWrite);
+    if (BytesWritten == -1) {
+      close(FileHandle);
+      return false;
+    }
+    BytesToWrite -= BytesWritten;
+    NextByteLocation += BytesWritten;
+  }
+  close(FileHandle);
+  return true;
+}
+
 sdl_audio_ring_buffer AudioRingBuffer;
 
 internal_usage void SDLAudioCallback(void *UserData, Uint8 *AudioData,
                                      int Length) {
   sdl_audio_ring_buffer *RingBuffer = (sdl_audio_ring_buffer *)UserData;
-
   int Region1Size = Length;
   int Region2Size = 0;
   if (RingBuffer->PlayCursor + Length > RingBuffer->Size) {
@@ -448,7 +518,7 @@ int main(int argc, char *argv[]) {
           real64 FPS = (real64)PerfCountFrequency / (real64)CounterElapsed;
           real64 MCPF = ((real64)CyclesElapsed / (1000.0f * 1000.0f));
 
-          printf("%.02fms/f, %.02f fps, %.02fmc/f\n", MSPerFrame, FPS, MCPF);
+          // printf("%.02fms/f, %.02f fps, %.02fmc/f\n", MSPerFrame, FPS, MCPF);
 
           LastCycleCount = EndCycleCount;
           LastCounter = EndCounter;

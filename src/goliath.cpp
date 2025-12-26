@@ -1,5 +1,7 @@
 #include "goliath.h"
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 internal_usage void GameOutputSound(game_sound_output_buffer *SoundBuffer,
                                     int ToneHZ) {
@@ -39,6 +41,18 @@ void GameUpdateAndRender(game_memory *GameMemory, game_input *Input,
 
   game_state *GameState = (game_state *)GameMemory->PermanentStorage;
   if (!GameMemory->IsInitialized) {
+    const char *HOME = getenv("HOME");
+    printf("%s", HOME);
+    char *Filename = (char *)__FILE__;
+    char Outfile[1024];
+    snprintf(Outfile, sizeof(Outfile),
+             "%s/Desktop/github/handmade/goliath/out.txt", HOME);
+
+    debug_read_file_result File = DEBUGPlatformReadEntireFile(Filename);
+    if (File.Contents) {
+      DEBUGPlatformWriteEntireFile(Outfile, File.ContentSize, File.Contents);
+      DEBUGPlatformFreeFileMemory(File.Contents);
+    }
     GameState->ToneHZ = 256;
     GameState->BlueOffset = 0;
     GameState->GreenOffset = 0;
