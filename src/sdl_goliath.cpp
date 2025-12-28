@@ -1,5 +1,6 @@
 #include "sdl_goliath.h"
 #include "goliath.h"
+#include <cstdio>
 #include <sys/fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -10,11 +11,11 @@
 #define MAP_ANONYMOUS MAP_ANON
 #endif
 
+#define MAX_CONTROLLERS 5
 global_variable sdl_offscreen_buffer GlobalBackbuffer;
 
 global_variable game_keyboard_state KeyboardState = {};
 
-#define MAX_CONTROLLERS 5
 SDL_GameController *ControllerHandles[MAX_CONTROLLERS];
 SDL_Haptic *RumbleHandles[MAX_CONTROLLERS];
 
@@ -22,6 +23,25 @@ inline uint32 SafeTruncateUInt64(uint64 Value) {
   Assert(Value <= 0xFFFFFFFF);
   uint32 FileSize32 = (uint32)Value;
   return FileSize32;
+}
+
+internal_usage real32 SDLGetSecondsElapsed(uint64 OldCounter,
+                                           uint64 CurrentCounter) {
+  return ((real32)(CurrentCounter - OldCounter) /
+          (real32)(SDL_GetPerformanceFrequency()));
+}
+
+internal_usage int SDLGetWindowRefreshRate(SDL_Window *Window) {
+  SDL_DisplayMode Mode;
+  int DisplayIndex = SDL_GetWindowDisplayIndex(Window);
+  int DefaultRefreshRate = 60;
+  if (SDL_GetDesktopDisplayMode(DisplayIndex, &Mode) != 0) {
+    return DefaultRefreshRate;
+  }
+  if (Mode.refresh_rate == 0) {
+    return DefaultRefreshRate;
+  }
+  return Mode.refresh_rate;
 }
 
 void DEBUGPlatformFreeFileMemory(void *Memory) { free(Memory); }
@@ -333,8 +353,14 @@ int main(int argc, char *argv[]) {
       SDL_CreateWindow("Goliath Game Engine", SDL_WINDOWPOS_UNDEFINED,
                        SDL_WINDOWPOS_UNDEFINED, 640, 480, SDL_WINDOW_RESIZABLE);
   if (Window) {
-    SDL_Renderer *Renderer =
-        SDL_CreateRenderer(Window, -1, SDL_RENDERER_PRESENTVSYNC);
+    SDL_Renderer *Renderer = SDL_CreateRenderer(Window, -1, 0);
+
+    printf("Refresh rate is %d Hz\n", SDLGetWindowRefreshRate(Window));
+
+    int GameUpdateHz = 30;
+
+    real32 TargetSecondsPerFrame = 1.0f / (real32)GameUpdateHz;
+
     if (Renderer) {
       bool Running = true;
       sdl_window_dimension Dimension = SDLGetWindowDimension(Window);
@@ -583,18 +609,40 @@ int main(int argc, char *argv[]) {
           Buffer.Width = GlobalBackbuffer.Width;
           Buffer.Height = GlobalBackbuffer.Height;
           Buffer.Pitch = GlobalBackbuffer.Pitch;
+
           GameUpdateAndRender(&GameMemory, NewInput, &Buffer, &SoundBuffer);
 
+          SDLFillSoundBuffer(&SoundOutput, ByteToLock, BytesToWrite,
+                             &SoundBuffer);
           game_input *Temp = NewInput;
           NewInput = OldInput;
           OldInput = Temp;
 
-          SDLFillSoundBuffer(&SoundOutput, ByteToLock, BytesToWrite,
-                             &SoundBuffer);
-
           SDLUpdateWindow(Window, Renderer, &GlobalBackbuffer);
+
+          // Frame rate limiting
+          real32 SecondsElapsed =
+              SDLGetSecondsElapsed(LastCounter, SDL_GetPerformanceCounter());
+          if (SecondsElapsed < TargetSecondsPerFrame) {
+            real32 SecondsLeftInFrame = TargetSecondsPerFrame - SecondsElapsed;
+            uint32 TimeToSleep =
+                (uint32)((SecondsLeftInFrame * 1000.0f) - 1.0f);
+
+            if (TimeToSleep > 0) {
+              SDL_Delay(TimeToSleep);
+            }
+
+            while (
+                SDLGetSecondsElapsed(LastCounter, SDL_GetPerformanceCounter()) <
+                TargetSecondsPerFrame) {
+              // Busy-wait for precision
+            }
+          }
+
+          // Measure frame time (always, regardless of whether we delayed)
           uint64 EndCycleCount = _rdtsc();
           uint64 EndCounter = SDL_GetPerformanceCounter();
+
           uint64 CounterElapsed = EndCounter - LastCounter;
           if (CounterElapsed == 0) {
             CounterElapsed = 1;
@@ -606,7 +654,7 @@ int main(int argc, char *argv[]) {
           real64 FPS = (real64)PerfCountFrequency / (real64)CounterElapsed;
           real64 MCPF = ((real64)CyclesElapsed / (1000.0f * 1000.0f));
 
-          // printf("%.02fms/f, %.02f fps, %.02fmc/f\n", MSPerFrame, FPS, MCPF);
+          printf("%.02fms/f, %.02f fps, %.02fmc/f\n", MSPerFrame, FPS, MCPF);
 
           LastCycleCount = EndCycleCount;
           LastCounter = EndCounter;
