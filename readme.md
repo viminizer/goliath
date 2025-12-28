@@ -2,45 +2,114 @@
 
 ![Goliath Game Engine](data/logos/goliath-minimal.png)
 
-Goliath is a high-performance, cross-platform game engine designed for professional developers.
+A handmade game engine built from scratch following platform abstraction principles. This is a learning project focused on understanding low-level game engine architecture without relying on large frameworks.
 
 ## About
 
-The Goliath Game Engine provides a comprehensive suite of tools and libraries to create stunning interactive experiences. From 2D mobile games to complex 3D simulations, Goliath is engineered for flexibility and performance.
+Goliath is a minimal game engine implementation that demonstrates:
+- Platform abstraction layer design
+- Cross-platform input handling (keyboard + game controllers)
+- Audio output using ring buffers
+- Software rendering to offscreen buffers
+- Memory management and allocation strategies
 
-## Features
+The project currently implements two platform layers:
+- **macOS native** (Objective-C++ with Cocoa/AppKit)
+- **SDL2** (cross-platform)
 
-*   **Cross-Platform:** Build for macOS, Windows, Linux, iOS, and Android from a single codebase. (Note: Currently, only macOS is implemented).
-*   **High-Performance Rendering:** A modern rendering pipeline built on top of Metal, Vulkan, and DirectX.
-*   **Extensible Architecture:** A modular design that allows for easy integration of new features and custom plugins.
-*   **Advanced Physics:** A robust physics engine for realistic simulations.
+Both share the same platform-independent game code.
+
+## Current Features
+
+- **Platform-Independent Game Layer**: Core game logic separated from platform code
+- **Input System**: Unified keyboard and game controller input abstraction
+  - Keyboard mapped to controller (Controllers[0])
+  - Physical controllers mapped to Controllers[1-5]
+  - Double-buffering pattern for input state
+- **Audio System**: Ring buffer-based audio output with sine wave generation
+- **Graphics**: Simple software rendering (animated gradient demo)
+- **Memory**: Custom memory allocation with permanent and transient storage
+- **Debug File I/O**: Platform-independent file read/write utilities
+
+## Project Structure
+
+```
+goliath/
+├── src/
+│   ├── goliath.cpp         # Platform-independent game logic
+│   ├── goliath.h           # Game API and data structures
+│   ├── sdl_goliath.cpp     # SDL2 platform layer
+│   ├── sdl_goliath.h       # SDL platform definitions
+│   └── macos/
+│       ├── osx_main.mm     # macOS native platform layer
+│       └── osx_main.h      # macOS platform definitions
+├── build.sh                # SDL build script
+└── run.sh                  # Run SDL build
+```
 
 ## Getting Started
 
 ### Prerequisites
 
-*   macOS
-*   Xcode Command Line Tools (for `clang`)
+**For SDL2 build:**
+- SDL2 library (`brew install sdl2` on macOS)
+- C++ compiler (clang/gcc)
 
-### Building the Engine
+**For macOS native build:**
+- macOS with Xcode Command Line Tools
+- Objective-C++ compiler
 
-To build the engine, run the following command from the `code` directory:
+### Building and Running
 
-```bash
-./build.sh
-```
-
-### Running the Engine
-
-After building the engine, you can run it with the following command from the `code` directory:
+**SDL2 version (recommended for cross-platform):**
 
 ```bash
-./run.sh
+./build.sh          # Builds to build/goliath
+./run.sh            # Builds and runs
 ```
 
-## Contributing
+**macOS native version:**
 
-We welcome contributions to the Goliath Game Engine! Please see our contributing guidelines for more information.
+```bash
+cd src/macos
+./build_osx.sh      # Builds macOS.app bundle
+./run_osx.sh        # Builds and runs
+```
+
+### Controls
+
+- **WASD**: Movement (mapped to controller D-pad)
+- **Arrow Keys**: Action buttons
+- **Q/E**: Shoulder buttons
+- **Space**: Start button
+- **ESC**: Back button
+- **Alt+F4**: Quit (SDL)
+
+Game controllers are automatically detected and supported.
+
+## Architecture
+
+The engine uses a clean platform abstraction architecture:
+
+1. **Platform Layer** (SDL/macOS): Handles windowing, input events, audio callbacks
+2. **Platform-Independent Layer** (goliath.cpp): Game logic, rendering, sound generation
+3. **Data Flow**: Platform → Game → Platform (via function pointers and structs)
+
+Key patterns:
+- Double-buffering for input state
+- Ring buffer for audio streaming
+- Callback-based debug I/O
+- Union types for flexible data access
+
+## Current State
+
+This is an **educational project** focused on learning engine architecture. Current capabilities:
+- Displays animated gradient (controlled by keyboard/gamepad)
+- Plays sine wave audio tone
+- Demonstrates platform abstraction patterns
+- Shows input handling architecture
+
+Future plans may include: sprite rendering, tile maps, entity systems, and game-specific logic.
 
 ## License
 
