@@ -1,11 +1,9 @@
 #include "goliath.h"
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
 
 internal_usage void GameOutputSound(game_sound_output_buffer *SoundBuffer,
                                     int ToneHZ) {
-
   local_persist real32 tSine;
   int16 ToneVolume = 3000;
   int WavePeriod = SoundBuffer->SamplesPerSecond / ToneHZ;
@@ -59,17 +57,22 @@ void GameUpdateAndRender(game_memory *GameMemory, game_input *Input,
     GameMemory->IsInitialized = true;
   }
 
-  game_controller_input *Input0 = &Input->Controllers[0];
-  if (Input0->IsAnalog) {
-    GameState->ToneHZ = 256 + (int)128.0f * (Input0->EndX);
-    GameState->BlueOffset += (int)4.0f * (Input0->EndY);
-  } else {
+  game_controller_input *Controller = &Input->Controllers[0];
+
+  if (Controller->MoveRight.EndedDown) {
+    GameState->BlueOffset += 50;
   }
 
-  if (Input0->Down.EndedDown) {
-    GameState->GreenOffset += 1;
+  if (Controller->MoveLeft.EndedDown) {
+    GameState->BlueOffset -= 50;
   }
 
   GameOutputSound(SoundBuffer, GameState->ToneHZ);
   RenderWeirdGradient(Buffer, GameState->BlueOffset, GameState->GreenOffset);
+}
+
+game_controller_input *GetController(game_input *Input, int ControllerIndex) {
+  Assert(ControllerIndex < ArrayCount(Input->Controllers));
+  game_controller_input *Result = &Input->Controllers[ControllerIndex];
+  return (Result);
 }
