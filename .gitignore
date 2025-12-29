@@ -4,4 +4,6 @@
 .cache
 /build_debug
 
+*.gri
+
 *.txt

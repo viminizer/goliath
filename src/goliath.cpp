@@ -2,6 +2,9 @@
 #include <cmath>
 #include <cstdio>
 
+// Ensure C linkage for dynamic library export
+extern "C" {
+
 internal_usage void GameOutputSound(game_sound_output_buffer *SoundBuffer,
                                     int ToneHZ) {
   local_persist real32 tSine;
@@ -33,7 +36,8 @@ internal_usage void RenderWeirdGradient(game_offscreen_buffer *Buffer,
   }
 }
 
-void GameUpdateAndRender(game_memory *GameMemory, game_input *Input,
+void GameUpdateAndRender(platform_thread_context *ThreadContext,
+                         game_memory *GameMemory, game_input *Input,
                          game_offscreen_buffer *Buffer,
                          game_sound_output_buffer *SoundBuffer) {
 
@@ -59,12 +63,22 @@ void GameUpdateAndRender(game_memory *GameMemory, game_input *Input,
 
   game_controller_input *Controller = &Input->Controllers[0];
 
+  // Test ExecutableReloaded flag
+  if (Input->ExecutableReloaded) {
+    printf("Game code detected hot reload! Reinitializing if needed...\n");
+  }
+
+  // Test mouse input
+  if (Input->MouseButtons[0].EndedDown) {
+    printf("Mouse clicked at (%d, %d)\n", Input->MouseX, Input->MouseY);
+  }
+
   if (Controller->MoveRight.EndedDown) {
-    GameState->BlueOffset += 50;
+    GameState->BlueOffset += 2000; // HOT RELOAD: Testing with 500!
   }
 
   if (Controller->MoveLeft.EndedDown) {
-    GameState->BlueOffset -= 50;
+    GameState->BlueOffset -= 5000; // HOT RELOAD: Testing with 500!
   }
 
   GameOutputSound(SoundBuffer, GameState->ToneHZ);
@@ -76,3 +90,5 @@ game_controller_input *GetController(game_input *Input, int ControllerIndex) {
   game_controller_input *Result = &Input->Controllers[ControllerIndex];
   return (Result);
 }
+
+} // extern "C"

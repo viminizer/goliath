@@ -1,23 +1,22 @@
 #!/bin/bash
-
 set -e
 
-echo "Running Goliath Game Engine (SDL)"
+echo "Building game library (libgoliath.dylib)..."
 
-rm -rf build
-mkdir build
+# Create build directory if it doesn't exist
+mkdir -p build
 pushd build
 
-CFLAGS="$(sdl2-config --cflags)"
-LDFLAGS="$(sdl2-config --libs)"
-
+# Compile platform-independent code as a dynamic library
 clang++ \
   -DGOLIATH_INTERNAL=1 \
   -DGOLIATH_SLOW=1 \
-  $CFLAGS \
-  ../src/goliath.cpp \
-  ../src/sdl_goliath.cpp \
-  $LDFLAGS \
-  -o goliath
+  -dynamiclib \
+  -undefined dynamic_lookup \
+  -install_name @rpath/libgoliath.dylib \
+  -o libgoliath.dylib \
+  ../src/goliath.cpp
+
+echo "Game library built: build/libgoliath.dylib"
 
 popd

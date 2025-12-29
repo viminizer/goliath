@@ -103,6 +103,7 @@ struct game_keyboard_state {
   bool32 KEY_A;
   bool32 KEY_S;
   bool32 KEY_D;
+  bool32 KEY_L; // For input recording/playback
 
   bool32 ARROW_UP;
   bool32 ARROW_DOWN;
@@ -119,7 +120,19 @@ struct game_keyboard_state {
 };
 
 struct game_input {
+  // Mouse input
+  int32 MouseX, MouseY, MouseZ;
+  game_button_state MouseButtons[5];
+
   game_controller_input Controllers[6];
+
+  // Hot reloading support
+  bool32 ExecutableReloaded;
+};
+
+// NOTE(casey): Services that the platform layer provides to the game
+struct platform_thread_context {
+  int Placeholder;
 };
 
 struct game_memory {
@@ -130,9 +143,28 @@ struct game_memory {
   void *TransientStorage;
 };
 
-void GameUpdateAndRender(game_memory *GameMemory, game_input *Input,
-                         game_offscreen_buffer *Buffer,
-                         game_sound_output_buffer *SoundBuffer);
+// NOTE: Function signature for game update and render
+#define GAME_UPDATE_AND_RENDER(name) void name(platform_thread_context *ThreadContext, \
+                         game_memory *GameMemory, game_input *Input, \
+                         game_offscreen_buffer *Buffer, \
+                         game_sound_output_buffer *SoundBuffer)
+typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
+
+// NOTE: Function signature for getting sound samples
+#define GAME_GET_SOUND_SAMPLES(name) void name(platform_thread_context *ThreadContext, \
+                         game_memory *GameMemory, \
+                         game_sound_output_buffer *SoundBuffer)
+typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+GAME_UPDATE_AND_RENDER(GameUpdateAndRender);
+
+#ifdef __cplusplus
+}
+#endif
 
 struct game_state {
   int ToneHZ;
@@ -140,6 +172,14 @@ struct game_state {
   int BlueOffset;
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 game_controller_input *GetController(game_input *Input, int ControllerIndex);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // GOLIATH_H
