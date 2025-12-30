@@ -53,6 +53,7 @@ struct game_offscreen_buffer {
   int Width;
   int Height;
   int Pitch;
+  int BytesPerPixel;
 };
 
 struct game_sound_output_buffer {
@@ -128,6 +129,7 @@ struct game_input {
 
   // Hot reloading support
   bool32 ExecutableReloaded;
+  real32 SecondsToAdvanceOverUpdate;
 };
 
 // NOTE(casey): Services that the platform layer provides to the game
@@ -144,16 +146,16 @@ struct game_memory {
 };
 
 // NOTE: Function signature for game update and render
-#define GAME_UPDATE_AND_RENDER(name) void name(platform_thread_context *ThreadContext, \
-                         game_memory *GameMemory, game_input *Input, \
-                         game_offscreen_buffer *Buffer, \
-                         game_sound_output_buffer *SoundBuffer)
+#define GAME_UPDATE_AND_RENDER(name)                                           \
+  void name(platform_thread_context *ThreadContext, game_memory *GameMemory,   \
+            game_input *Input, game_offscreen_buffer *Buffer,                  \
+            game_sound_output_buffer *SoundBuffer)
 typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
 
 // NOTE: Function signature for getting sound samples
-#define GAME_GET_SOUND_SAMPLES(name) void name(platform_thread_context *ThreadContext, \
-                         game_memory *GameMemory, \
-                         game_sound_output_buffer *SoundBuffer)
+#define GAME_GET_SOUND_SAMPLES(name)                                           \
+  void name(platform_thread_context *ThreadContext, game_memory *GameMemory,   \
+            game_sound_output_buffer *SoundBuffer)
 typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);
 
 #ifdef __cplusplus
@@ -166,11 +168,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender);
 }
 #endif
 
-struct game_state {
-  int ToneHZ;
-  int GreenOffset;
-  int BlueOffset;
-};
+struct game_state {};
 
 #ifdef __cplusplus
 extern "C" {

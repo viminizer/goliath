@@ -1,3 +1,4 @@
+#include "goliath.h"
 #if !defined(SDL_HANDMADE_H)
 #include <SDL.h>
 #define internal_usage static

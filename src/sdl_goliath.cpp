@@ -1,5 +1,5 @@
-#include "goliath.h"
 #include "sdl_goliath.h"
+#include "goliath.h"
 #include <dlfcn.h>
 #include <mach-o/dyld.h>
 #include <sys/fcntl.h>
@@ -548,101 +548,6 @@ internal_usage void SDLCloseGameControllers() {
   }
 }
 
-#if GOLIATH_INTERNAL
-internal_usage void SDLDebugDrawVertical(sdl_offscreen_buffer *Backbuffer,
-                                         int X, int Top, int Bottom,
-                                         uint32 Color) {
-  if (Top <= 0) {
-    Top = 0;
-  }
-
-  if (Bottom > Backbuffer->Height) {
-    Bottom = Backbuffer->Height;
-  }
-
-  if ((X >= 0) && (X < Backbuffer->Width)) {
-    uint8 *Pixel =
-        ((uint8 *)Backbuffer->Memory + X * 4 + Top * Backbuffer->Pitch);
-    for (int Y = Top; Y < Bottom; ++Y) {
-      *(uint32 *)Pixel = Color;
-      Pixel += Backbuffer->Pitch;
-    }
-  }
-}
-
-inline void SDLDrawSoundBufferMarker(sdl_offscreen_buffer *Backbuffer,
-                                     sdl_sound_output *SoundOutput, real32 C,
-                                     int PadX, int Top, int Bottom,
-                                     uint32 Value, uint32 Color) {
-  real32 XReal32 = (C * (real32)Value);
-  int X = PadX + (int)XReal32;
-  SDLDebugDrawVertical(Backbuffer, X, Top, Bottom, Color);
-}
-
-internal_usage void SDLDebugSyncDisplay(sdl_offscreen_buffer *Backbuffer,
-                                        int MarkerCount,
-                                        sdl_debug_time_marker *Markers,
-                                        int CurrentMarkerIndex,
-                                        sdl_sound_output *SoundOutput,
-                                        real32 TargetSecondsPerFrame) {
-  int PadX = 16;
-  int PadY = 16;
-
-  int LineHeight = 64;
-
-  real32 C = (real32)(Backbuffer->Width - 2 * PadX) /
-             (real32)SoundOutput->SecondaryBufferSize;
-  for (int MarkerIndex = 0; MarkerIndex < MarkerCount; ++MarkerIndex) {
-    sdl_debug_time_marker *ThisMarker = &Markers[MarkerIndex];
-    Assert(MarkerIndex < MarkerCount);
-
-    int PlayColor = 0xFFFFFFFF;
-    int WriteColor = 0xFFFF0000;
-    int ExpectedFlipColor = 0xFFFFFF00;
-    int PlayWindowColor = 0xFFFF00FF;
-
-    int Top = PadY;
-    int Bottom = PadY + LineHeight;
-    if (MarkerIndex == CurrentMarkerIndex) {
-      Top += LineHeight + PadY;
-      Bottom += LineHeight + PadY;
-
-      int FirstTop = Top;
-
-      SDLDrawSoundBufferMarker(Backbuffer, SoundOutput, C, PadX, Top, Bottom,
-                               ThisMarker->OutputPlayCursor, PlayColor);
-      SDLDrawSoundBufferMarker(Backbuffer, SoundOutput, C, PadX, Top, Bottom,
-                               ThisMarker->OutputWriteCursor, WriteColor);
-
-      Top += LineHeight + PadY;
-      Bottom += LineHeight + PadY;
-
-      SDLDrawSoundBufferMarker(Backbuffer, SoundOutput, C, PadX, Top, Bottom,
-                               ThisMarker->OutputLocation, PlayColor);
-      SDLDrawSoundBufferMarker(
-          Backbuffer, SoundOutput, C, PadX, Top, Bottom,
-          ThisMarker->OutputLocation + ThisMarker->OutputByteCount, WriteColor);
-
-      Top += LineHeight + PadY;
-      Bottom += LineHeight + PadY;
-
-      SDLDrawSoundBufferMarker(Backbuffer, SoundOutput, C, PadX, FirstTop,
-                               Bottom, ThisMarker->ExpectedFlipPlayCursor,
-                               ExpectedFlipColor);
-    }
-
-    SDLDrawSoundBufferMarker(Backbuffer, SoundOutput, C, PadX, Top, Bottom,
-                             ThisMarker->FlipPlayCursor, PlayColor);
-    SDLDrawSoundBufferMarker(Backbuffer, SoundOutput, C, PadX, Top, Bottom,
-                             ThisMarker->FlipPlayCursor +
-                                 480 * SoundOutput->BytesPerSample,
-                             PlayWindowColor);
-    SDLDrawSoundBufferMarker(Backbuffer, SoundOutput, C, PadX, Top, Bottom,
-                             ThisMarker->FlipWriteCursor, WriteColor);
-  }
-}
-#endif
-
 int main(int argc, char *argv[]) {
   SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_HAPTIC |
            SDL_INIT_AUDIO);
@@ -670,6 +575,7 @@ int main(int argc, char *argv[]) {
       game_input Input[2] = {};
       game_input *NewInput = &Input[0];
       game_input *OldInput = &Input[1];
+      NewInput->SecondsToAdvanceOverUpdate = TargetSecondsPerFrame;
 
       sdl_sound_output SoundOutput = {};
       SoundOutput.SamplesPerSecond = 48000;
@@ -706,11 +612,6 @@ int main(int argc, char *argv[]) {
           GameMemory.TransientStorage) {
         uint64 LastCounter = SDL_GetPerformanceCounter();
         uint64 LastCycleCount = _rdtsc();
-
-#if GOLIATH_INTERNAL
-        int DebugTimeMarkerIndex = 0;
-        sdl_debug_time_marker DebugTimeMarkers[15] = {};
-#endif
 
         // Initialize replay system
         sdl_state SDLState = {};
@@ -968,26 +869,6 @@ int main(int argc, char *argv[]) {
             }
           }
 
-#if GOLIATH_INTERNAL
-          // Input recording/playback control (L key like Casey's Handmade Hero)
-          if (KeyboardState.KEY_L) {
-            if (SDLState.InputPlayingIndex == 0) {
-              if (SDLState.InputRecordingIndex == 0) {
-                // Start recording to slot 1
-                SDLBeginRecordingInput(&SDLState, 1);
-              } else {
-                // Stop recording and start playback
-                SDLEndRecordingInput(&SDLState);
-                SDLBeginInputPlayBack(&SDLState, 1);
-              }
-            } else {
-              // Stop playback
-              SDLEndInputPlayBack(&SDLState);
-            }
-            KeyboardState.KEY_L = false; // Prevent repeat
-          }
-#endif
-
           // Handle recording
           if (SDLState.InputRecordingIndex) {
             SDLRecordInput(&SDLState, NewInput);
@@ -1013,16 +894,6 @@ int main(int argc, char *argv[]) {
           } else {
             BytesToWrite = TargetCursor - ByteToLock;
           }
-
-#if GOLIATH_INTERNAL
-          sdl_debug_time_marker *Marker =
-              &DebugTimeMarkers[DebugTimeMarkerIndex];
-          Marker->OutputPlayCursor = AudioRingBuffer.PlayCursor;
-          Marker->OutputWriteCursor = AudioRingBuffer.WriteCursor;
-          Marker->OutputLocation = ByteToLock;
-          Marker->OutputByteCount = BytesToWrite;
-          Marker->ExpectedFlipPlayCursor = TargetCursor;
-#endif
 
           SDL_UnlockAudio();
 
@@ -1057,27 +928,6 @@ int main(int argc, char *argv[]) {
           AudioRingBuffer.WriteCursor =
               (ByteToLock + BytesToWrite) % SoundOutput.SecondaryBufferSize;
           SDL_UnlockAudio();
-
-#if GOLIATH_INTERNAL
-          // NOTE(casey): Capture flip cursors for debug visualization
-          {
-            SDL_LockAudio();
-
-            sdl_debug_time_marker *Marker =
-                &DebugTimeMarkers[DebugTimeMarkerIndex];
-            Marker->FlipPlayCursor = AudioRingBuffer.PlayCursor;
-            Marker->FlipWriteCursor = AudioRingBuffer.WriteCursor;
-
-            SDL_UnlockAudio();
-          }
-
-          // NOTE(casey): Draw audio debug visualization BEFORE updating window
-          {
-            SDLDebugSyncDisplay(&GlobalBackbuffer, ArrayCount(DebugTimeMarkers),
-                                DebugTimeMarkers, DebugTimeMarkerIndex - 1,
-                                &SoundOutput, TargetSecondsPerFrame);
-          }
-#endif
 
           SDLUpdateWindow(Window, Renderer, &GlobalBackbuffer);
 
@@ -1120,13 +970,6 @@ int main(int argc, char *argv[]) {
           real64 MCPF = ((real64)CyclesElapsed / (1000.0f * 1000.0f));
 
           printf("%.02fms/f, %.02f fps, %.02fmc/f\n", MSPerFrame, FPS, MCPF);
-
-#if GOLIATH_INTERNAL
-          ++DebugTimeMarkerIndex;
-          if (DebugTimeMarkerIndex >= ArrayCount(DebugTimeMarkers)) {
-            DebugTimeMarkerIndex = 0;
-          }
-#endif
 
           LastCycleCount = EndCycleCount;
           LastCounter = EndCounter;
