@@ -575,7 +575,6 @@ int main(int argc, char *argv[]) {
       game_input Input[2] = {};
       game_input *NewInput = &Input[0];
       game_input *OldInput = &Input[1];
-      NewInput->dtForFrame = TargetSecondsPerFrame;
 
       sdl_sound_output SoundOutput = {};
       SoundOutput.SamplesPerSecond = 48000;
@@ -671,6 +670,7 @@ int main(int argc, char *argv[]) {
         int HotReloadCheckCounter = 0;
         while (Running) {
 
+          NewInput->dtForFrame = TargetSecondsPerFrame;
           // Check for hot reload (only check every 120 frames to reduce
           // overhead)
           NewInput->ExecutableReloaded = false;
