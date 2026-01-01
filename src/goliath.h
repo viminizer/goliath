@@ -129,7 +129,7 @@ struct game_input {
 
   // Hot reloading support
   bool32 ExecutableReloaded;
-  real32 SecondsToAdvanceOverUpdate;
+  real32 dtForFrame;
 };
 
 // NOTE(casey): Services that the platform layer provides to the game
@@ -168,7 +168,10 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender);
 }
 #endif
 
-struct game_state {};
+struct game_state {
+  real32 PlayerX;
+  real32 PlayerY;
+};
 
 #ifdef __cplusplus
 extern "C" {

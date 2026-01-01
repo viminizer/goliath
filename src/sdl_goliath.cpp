@@ -562,7 +562,7 @@ int main(int argc, char *argv[]) {
 
     printf("Refresh rate is %d Hz\n", SDLGetWindowRefreshRate(Window));
 
-    int GameUpdateHz = 30;
+    int GameUpdateHz = 60;
 
     real32 TargetSecondsPerFrame = 1.0f / (real32)GameUpdateHz;
 
@@ -575,7 +575,7 @@ int main(int argc, char *argv[]) {
       game_input Input[2] = {};
       game_input *NewInput = &Input[0];
       game_input *OldInput = &Input[1];
-      NewInput->SecondsToAdvanceOverUpdate = TargetSecondsPerFrame;
+      NewInput->dtForFrame = TargetSecondsPerFrame;
 
       sdl_sound_output SoundOutput = {};
       SoundOutput.SamplesPerSecond = 48000;
