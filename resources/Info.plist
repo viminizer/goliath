@@ -18,5 +18,7 @@
     <string>NSApplication</string>
     <key>CFBundleExecutable</key>
     <string>goliath</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.viminizer.goliat</string>
   </dict>
 </plist>

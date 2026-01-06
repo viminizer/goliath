@@ -969,7 +969,7 @@ int main(int argc, char *argv[]) {
           real64 FPS = (real64)PerfCountFrequency / (real64)CounterElapsed;
           real64 MCPF = ((real64)CyclesElapsed / (1000.0f * 1000.0f));
 
-          printf("%.02fms/f, %.02f fps, %.02fmc/f\n", MSPerFrame, FPS, MCPF);
+          // printf("%.02fms/f, %.02f fps, %.02fmc/f\n", MSPerFrame, FPS, MCPF);
 
           LastCycleCount = EndCycleCount;
           LastCounter = EndCounter;

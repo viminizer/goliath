@@ -3,6 +3,20 @@
 // Ensure C linkage for dynamic library export
 extern "C" {
 #define M_PI 3.1415
+#define TILE_MAP_COUNT_X 17
+#define TILE_MAP_COUNT_Y 9
+
+uint32 Tiles[TILE_MAP_COUNT_Y][TILE_MAP_COUNT_X] = {
+    {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+    {1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1},
+    {1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1},
+    {1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1},
+    {1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0},
+    {1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1},
+    {1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
+    {1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
+    {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+};
 
 internal_usage void GameOutputSound(game_state *GameState,
                                     game_sound_output_buffer *SoundBuffer,
@@ -21,14 +35,49 @@ internal_usage void GameOutputSound(game_state *GameState,
   }
 }
 
-internal_usage int32 RoundReal32ToInt32(real32 Value) {
+inline int32 RoundReal32ToInt32(real32 Value) {
   int32 Result = (int32)(Value + 0.5f);
   return Result;
 }
 
-internal_usage uint32 RoundReal32ToUInt32(real32 Value) {
+inline uint32 RoundReal32ToUInt32(real32 Value) {
   uint32 Result = (uint32)(Value + 0.5f);
   return Result;
+}
+
+inline int32 TruncateReal32ToInt32(real32 Value) {
+  int32 Result = (int32)Value;
+  return Result;
+}
+
+struct tile_map {
+  real32 UpperLeftX;
+  real32 UpperLeftY;
+  real32 Width;
+  real32 Height;
+  int32 CountX;
+  int32 CountY;
+
+  uint32 *Tiles;
+};
+
+internal_usage bool32 IsTileMapPointEmpty(tile_map *TileMapStruct, real32 TestX,
+                                          real32 TestY) {
+  bool32 IsEmpty = false;
+  int32 PlayerTileX = TruncateReal32ToInt32(
+      (TestX - TileMapStruct->UpperLeftX) / TileMapStruct->Width);
+  int32 PlayerTileY = TruncateReal32ToInt32(
+      (TestY - TileMapStruct->UpperLeftY) / TileMapStruct->Height);
+
+  if ((PlayerTileX >= 0) && (PlayerTileX < TileMapStruct->CountX) &&
+      (PlayerTileY >= 0) && (PlayerTileY < TileMapStruct->CountY)) {
+
+    uint32 TileMapValue =
+        TileMapStruct->Tiles[PlayerTileY * TileMapStruct->CountX + PlayerTileX];
+
+    IsEmpty = (TileMapValue == 0);
+  }
+  return IsEmpty;
 }
 
 internal_usage void DrawRectangle(game_offscreen_buffer *Buffer,
@@ -67,44 +116,39 @@ internal_usage void DrawRectangle(game_offscreen_buffer *Buffer,
     Row += Buffer->Pitch;
   }
 }
-uint32 TileMap[9][16] = {
-    {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-    {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-    {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-    {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1},
-    {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0},
-    {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1},
-    {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1},
-    {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
-    {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-};
 
 void GameUpdateAndRender(platform_thread_context *ThreadContext,
                          game_memory *GameMemory, game_input *Input,
                          game_offscreen_buffer *Buffer,
                          game_sound_output_buffer *SoundBuffer) {
   game_state *GameState = (game_state *)GameMemory->PermanentStorage;
+  tile_map TileMap;
+
+  TileMap.UpperLeftX = -30;
+  TileMap.UpperLeftY = 0;
+  TileMap.Width = (real32)Buffer->Width / 16.0f;
+  TileMap.Height = (real32)Buffer->Height / 9.0f;
+  TileMap.CountX = TILE_MAP_COUNT_X;
+  TileMap.CountY = TILE_MAP_COUNT_Y;
+
+  TileMap.Tiles = (uint32 *)Tiles;
+
   if (!GameMemory->IsInitialized) {
     GameState->PlayerX = 100.0f;
     GameState->PlayerY = 100.0f;
     GameMemory->IsInitialized = true;
   }
 
-  real32 UpperLeftX = 0;
-  real32 UpperLeftY = 0;
-  real32 TileWidth = (real32)Buffer->Width / 16.0f;
-  real32 TileHeight = (real32)Buffer->Height / 9.0f;
-
   DrawRectangle(Buffer, 0.0f, 0.0f, Buffer->Width, Buffer->Height, 1.0f, 1.0f,
                 1.0f);
 
   for (int Row = 0; Row < 9; ++Row) {
     for (int Col = 0; Col < 16; ++Col) {
-      uint32 TileID = TileMap[Row][Col];
-      real32 MinX = (real32)Col * TileWidth;
-      real32 MinY = (real32)Row * TileHeight;
-      real32 MaxX = MinX + TileWidth;
-      real32 MaxY = MinY + TileHeight;
+      uint32 TileID = Tiles[Row][Col];
+      real32 MinX = (real32)Col * TileMap.Width;
+      real32 MinY = (real32)Row * TileMap.Height;
+      real32 MaxX = MinX + TileMap.Width;
+      real32 MaxY = MinY + TileMap.Height;
       real32 Gray = 1.0f;
       if (TileID == 1) {
         Gray = 0.3f;
@@ -117,8 +161,8 @@ void GameUpdateAndRender(platform_thread_context *ThreadContext,
   real32 PlayerR = 1.0f;
   real32 PlayerG = 1.0f;
   real32 PlayerB = 0.0f;
-  real32 PlayerWidth = 0.75f * TileWidth;
-  real32 PlayerHeight = 0.75f * TileHeight;
+  real32 PlayerWidth = 0.75f * TileMap.Width;
+  real32 PlayerHeight = 0.75f * TileMap.Height;
   real32 PlayerLeft = GameState->PlayerX - 0.5f * PlayerWidth;
   real32 PlayerTop = GameState->PlayerY - PlayerHeight;
 
@@ -130,26 +174,27 @@ void GameUpdateAndRender(platform_thread_context *ThreadContext,
   real32 dPlayerY = 0.0f;
 
   if (Controller->MoveRight.EndedDown) {
-    printf("MOVE RIGHT IS DOWN\n");
-    dPlayerX = 10.0f;
+    dPlayerX = 1.0f;
   }
   if (Controller->MoveUp.EndedDown) {
-    printf("MOVE UP IS DOWN\n");
-    dPlayerY = -10.0f;
+    dPlayerY = -1.0f;
   }
   if (Controller->MoveLeft.EndedDown) {
-    printf("MOVE LEFT IS DOWN\n");
-    dPlayerX = -10.0f;
+    dPlayerX = -1.0f;
   }
   if (Controller->MoveDown.EndedDown) {
-    printf("MOVE DOWN IS DOWN\n");
-    dPlayerY = 10.0f;
+    dPlayerY = 1.0f;
   }
   dPlayerX *= 20.0f;
   dPlayerY *= 20.0f;
 
   GameState->PlayerX += Input->dtForFrame * dPlayerX;
   GameState->PlayerY += Input->dtForFrame * dPlayerY;
+
+  real32 NewPlayerX = GameState->PlayerX + Input->dtForFrame * dPlayerX;
+  real32 NewPlayerY = GameState->PlayerY + Input->dtForFrame * dPlayerY;
+
+  bool32 IsValid = false;
 
   GameOutputSound(GameState, SoundBuffer, 256);
 }
